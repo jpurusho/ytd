@@ -6,6 +6,7 @@ import {
 import VideoCard from '../components/VideoCard/VideoCard';
 import FormatSelector from '../components/FormatSelector/FormatSelector';
 import YouTubePreview from '../components/YouTubePreview/YouTubePreview';
+import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
 import type { VideoInfo, PlaylistInfo, PlaylistItem, SubscriptionInfo, DownloadRequest } from '@shared/types';
 
 interface Props {
@@ -26,6 +27,7 @@ export default function Browse({ onDownload }: Props) {
   const [urlError, setUrlError] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<VideoInfo | null>(null);
   const [previewVideo, setPreviewVideo] = useState<VideoInfo | null>(null);
+  const [addToPlaylistVideo, setAddToPlaylistVideo] = useState<VideoInfo | null>(null);
 
   useEffect(() => {
     if (tab === 0 && playlists.length === 0) loadPlaylists();
@@ -170,7 +172,7 @@ export default function Browse({ onDownload }: Props) {
               };
               return (
                 <Grid item xs={12} sm={6} md={4} lg={3} key={item.videoId}>
-                  <VideoCard video={videoInfo} onDownload={setSelectedVideo} onPreview={setPreviewVideo} />
+                  <VideoCard video={videoInfo} onDownload={setSelectedVideo} onPreview={setPreviewVideo} onAddToPlaylist={setAddToPlaylistVideo} />
                 </Grid>
               );
             })}
@@ -211,7 +213,7 @@ export default function Browse({ onDownload }: Props) {
           <Grid container spacing={2}>
             {channelVideos.map((video) => (
               <Grid item xs={12} sm={6} md={4} lg={3} key={video.id}>
-                <VideoCard video={video} onDownload={setSelectedVideo} onPreview={setPreviewVideo} />
+                <VideoCard video={video} onDownload={setSelectedVideo} onPreview={setPreviewVideo} onAddToPlaylist={setAddToPlaylistVideo} />
               </Grid>
             ))}
           </Grid>
@@ -234,7 +236,7 @@ export default function Browse({ onDownload }: Props) {
           </Box>
           {urlError && <Alert severity="error" sx={{ mb: 2 }}>{urlError}</Alert>}
           {urlVideo && (
-            <VideoCard video={urlVideo} onDownload={setSelectedVideo} onPreview={setPreviewVideo} />
+            <VideoCard video={urlVideo} onDownload={setSelectedVideo} onPreview={setPreviewVideo} onAddToPlaylist={setAddToPlaylistVideo} />
           )}
         </Box>
       )}
@@ -250,6 +252,12 @@ export default function Browse({ onDownload }: Props) {
         video={previewVideo}
         onClose={() => setPreviewVideo(null)}
         onDownload={(v) => { setPreviewVideo(null); setSelectedVideo(v); }}
+      />
+
+      <AddToPlaylistDialog
+        open={!!addToPlaylistVideo}
+        videos={addToPlaylistVideo ? [addToPlaylistVideo] : []}
+        onClose={() => setAddToPlaylistVideo(null)}
       />
     </Box>
   );
