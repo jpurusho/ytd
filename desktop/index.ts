@@ -34,64 +34,78 @@ function createWindow(): void {
     },
   });
 
-  if (process.platform === 'darwin') {
-    const template: Electron.MenuItemConstructorOptions[] = [
-      {
-        label: app.name,
-        submenu: [
-          { role: 'about' },
-          { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
-          { type: 'separator' },
-          { role: 'quit' },
-        ],
-      },
-      {
-        label: 'Edit',
-        submenu: [
-          { role: 'undo' },
-          { role: 'redo' },
-          { type: 'separator' },
-          { role: 'cut' },
-          { role: 'copy' },
-          { role: 'paste' },
-          { role: 'selectAll' },
-        ],
-      },
-      {
-        label: 'View',
-        submenu: [
-          { role: 'togglefullscreen' },
-          {
-            label: 'Exit Full Screen',
-            accelerator: 'Escape',
-            click: () => {
-              const win = BrowserWindow.getFocusedWindow();
-              if (win?.isFullScreen()) win.setFullScreen(false);
-            },
+  const isMac = process.platform === 'darwin';
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' as const },
+        { type: 'separator' as const },
+        { role: 'hide' as const },
+        { role: 'hideOthers' as const },
+        { role: 'unhide' as const },
+        { type: 'separator' as const },
+        { role: 'quit' as const },
+      ],
+    }] : []),
+    {
+      label: 'File',
+      submenu: [
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'pasteAndMatchStyle' },
+        { role: 'delete' },
+        { type: 'separator' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+        ...(isMac ? [{
+          label: 'Exit Full Screen' as string,
+          accelerator: 'Escape' as string,
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow();
+            if (win?.isFullScreen()) win.setFullScreen(false);
           },
-          { type: 'separator' },
-          { role: 'resetZoom' },
-          { role: 'zoomIn' },
-          { role: 'zoomOut' },
-          ...(isDev ? [{ type: 'separator' as const }, { role: 'toggleDevTools' as const }] : []),
-        ],
-      },
-      {
-        label: 'Window',
-        submenu: [
-          { role: 'minimize' },
-          { role: 'zoom' },
-          { role: 'close' },
-          { type: 'separator' },
-          { role: 'front' },
-        ],
-      },
-    ];
-    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-  }
+        }] : []),
+        { type: 'separator' as const },
+        { role: 'resetZoom' as const },
+        { role: 'zoomIn' as const },
+        { role: 'zoomOut' as const },
+        ...(isDev ? [{ type: 'separator' as const }, { role: 'toggleDevTools' as const }] : []),
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(isMac ? [
+          { type: 'separator' as const },
+          { role: 'front' as const },
+        ] : [
+          { role: 'close' as const },
+        ]),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
