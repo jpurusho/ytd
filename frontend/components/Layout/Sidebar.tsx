@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, List, ListItemButton, ListItemIcon, ListItemText,
-  Avatar, Typography, IconButton, Collapse, Badge,
+  Avatar, Typography, IconButton, Collapse, Menu, MenuItem,
+  TextField,
 } from '@mui/material';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import SearchIcon from '@mui/icons-material/Search';
@@ -14,6 +15,9 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import PlaylistPlayIcon from '@mui/icons-material/PlaylistPlay';
+import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import type { UserInfo, LocalPlaylist } from '@shared/types';
 
 export type Page = 'dashboard' | 'search' | 'browse' | 'playlists' | 'downloads' | 'history' | 'settings';
@@ -39,6 +43,11 @@ const navItems: Array<{ page: Page; label: string; icon: React.ReactNode }> = [
 export default function Sidebar({ currentPage, onPageChange, user, onLogout, queueCount, onSelectPlaylist }: Props) {
   const [playlistsExpanded, setPlaylistsExpanded] = useState(true);
   const [playlists, setPlaylists] = useState<(LocalPlaylist & { itemCount?: number })[]>([]);
+  const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; playlistId: number } | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [renaming, setRenaming] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   useEffect(() => {
     loadPlaylists();
@@ -57,6 +66,34 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
       }));
       setPlaylists(withCounts);
     } catch {}
+  }
+
+  async function handleCreate() {
+    if (!newName.trim()) { setCreating(false); return; }
+    await window.api.playlists.create(newName.trim());
+    setNewName('');
+    setCreating(false);
+    loadPlaylists();
+  }
+
+  async function handleRename() {
+    if (!renaming || !renameValue.trim()) { setRenaming(null); return; }
+    await window.api.playlists.update(renaming, { name: renameValue.trim() });
+    setRenaming(null);
+    setRenameValue('');
+    loadPlaylists();
+  }
+
+  async function handleDelete(id: number) {
+    await window.api.playlists.delete(id);
+    setContextMenu(null);
+    loadPlaylists();
+  }
+
+  function handleContextMenu(e: React.MouseEvent, playlistId: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ mouseX: e.clientX, mouseY: e.clientY, playlistId });
   }
 
   return (
@@ -104,49 +141,114 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
         {/* Playlists Section */}
         <ListItemButton
           selected={currentPage === 'playlists'}
-          onClick={() => { onPageChange('playlists'); setPlaylistsExpanded(!playlistsExpanded); }}
+          onClick={() => { onPageChange('playlists'); }}
           sx={{ borderRadius: 2, mb: 0.5, '&.Mui-selected': { bgcolor: 'action.selected' } }}
         >
           <ListItemIcon sx={{ minWidth: 36, color: currentPage === 'playlists' ? 'primary.main' : 'text.secondary' }}>
             <QueueMusicIcon />
           </ListItemIcon>
           <ListItemText
-            primary={`Playlists${playlists.length > 0 ? ` (${playlists.length})` : ''}`}
+            primary={`Playlists`}
             primaryTypographyProps={{ fontSize: '0.875rem' }}
           />
-          {playlists.length > 0 && (
-            <IconButton
-              size="small"
-              onClick={(e) => { e.stopPropagation(); setPlaylistsExpanded(!playlistsExpanded); }}
-              sx={{ p: 0.25 }}
-            >
-              {playlistsExpanded ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
-            </IconButton>
-          )}
+          <IconButton
+            size="small"
+            onClick={(e) => { e.stopPropagation(); setCreating(true); }}
+            title="New playlist"
+            sx={{ p: 0.25, mr: 0.25 }}
+          >
+            <AddIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+          <IconButton
+            size="small"
+            onClick={(e) => { e.stopPropagation(); setPlaylistsExpanded(!playlistsExpanded); }}
+            sx={{ p: 0.25 }}
+          >
+            {playlistsExpanded ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
+          </IconButton>
         </ListItemButton>
 
-        <Collapse in={playlistsExpanded && playlists.length > 0} timeout="auto">
+        <Collapse in={playlistsExpanded} timeout="auto">
           <List disablePadding sx={{ pl: 1 }}>
+            {/* Inline create field */}
+            {creating && (
+              <Box sx={{ px: 1, py: 0.5 }}>
+                <TextField
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Playlist name"
+                  size="small"
+                  fullWidth
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setCreating(false); }}
+                  onBlur={handleCreate}
+                  inputProps={{ style: { fontSize: '0.8rem', padding: '4px 8px' } }}
+                />
+              </Box>
+            )}
+
             {playlists.map((pl) => (
               <ListItemButton
                 key={pl.id}
                 onClick={() => { onPageChange('playlists'); onSelectPlaylist?.(pl.id); }}
+                onContextMenu={(e) => handleContextMenu(e, pl.id)}
                 sx={{ borderRadius: 1.5, py: 0.5, mb: 0.25 }}
               >
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <PlaylistPlayIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                 </ListItemIcon>
-                <ListItemText
-                  primary={pl.name}
-                  primaryTypographyProps={{ fontSize: '0.8rem', noWrap: true }}
-                />
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                {renaming === pl.id ? (
+                  <TextField
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    size="small"
+                    autoFocus
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') setRenaming(null); }}
+                    onBlur={handleRename}
+                    onClick={(e) => e.stopPropagation()}
+                    inputProps={{ style: { fontSize: '0.8rem', padding: '2px 6px' } }}
+                    sx={{ flex: 1 }}
+                  />
+                ) : (
+                  <ListItemText
+                    primary={pl.name}
+                    primaryTypographyProps={{ fontSize: '0.8rem', noWrap: true }}
+                  />
+                )}
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', ml: 0.5 }}>
                   {pl.itemCount ?? 0}
                 </Typography>
               </ListItemButton>
             ))}
+
+            {playlists.length === 0 && !creating && (
+              <Typography variant="caption" color="text.secondary" sx={{ px: 2, py: 0.5, display: 'block' }}>
+                No playlists yet
+              </Typography>
+            )}
           </List>
         </Collapse>
+
+        {/* Right-click context menu */}
+        <Menu
+          open={contextMenu !== null}
+          onClose={() => setContextMenu(null)}
+          anchorReference="anchorPosition"
+          anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
+        >
+          <MenuItem onClick={() => {
+            const pl = playlists.find(p => p.id === contextMenu?.playlistId);
+            if (pl) { setRenaming(pl.id); setRenameValue(pl.name); }
+            setContextMenu(null);
+          }}>
+            <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Rename</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={() => { if (contextMenu) handleDelete(contextMenu.playlistId); }}>
+            <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+            <ListItemText>Delete</ListItemText>
+          </MenuItem>
+        </Menu>
       </List>
 
       <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1 }}>
