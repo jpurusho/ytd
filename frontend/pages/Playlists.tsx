@@ -18,9 +18,11 @@ import type { LocalPlaylist, LocalPlaylistItem, PlaylistInfo, DownloadRequest } 
 
 interface Props {
   onDownload: (request: DownloadRequest) => void;
+  openPlaylistId?: number | null;
+  onPlaylistOpened?: () => void;
 }
 
-export default function Playlists({ onDownload }: Props) {
+export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened }: Props) {
   const [playlists, setPlaylists] = useState<LocalPlaylist[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<LocalPlaylist | null>(null);
   const [playlistItems, setPlaylistItems] = useState<LocalPlaylistItem[]>([]);
@@ -40,9 +42,28 @@ export default function Playlists({ onDownload }: Props) {
     loadPlaylists();
   }, []);
 
+  useEffect(() => {
+    if (openPlaylistId) {
+      window.api.playlists.get(openPlaylistId).then((pl) => {
+        if (pl) {
+          openPlaylist(pl);
+          onPlaylistOpened?.();
+        }
+      });
+    }
+  }, [openPlaylistId]);
+
+  const [playlistCounts, setPlaylistCounts] = useState<Record<number, number>>({});
+
   async function loadPlaylists() {
     const data = await window.api.playlists.getAll();
     setPlaylists(data);
+    const counts: Record<number, number> = {};
+    await Promise.all(data.map(async (pl) => {
+      const items = await window.api.playlists.getItems(pl.id);
+      counts[pl.id] = items.length;
+    }));
+    setPlaylistCounts(counts);
   }
 
   async function openPlaylist(pl: LocalPlaylist) {
@@ -312,7 +333,15 @@ export default function Playlists({ onDownload }: Props) {
                 <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                   <Box display="flex" alignItems="start" justifyContent="space-between">
                     <Box flex={1} overflow="hidden">
-                      <Typography variant="body1" fontWeight={600} noWrap>{pl.name}</Typography>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <Typography variant="body1" fontWeight={600} noWrap>{pl.name}</Typography>
+                        <Chip
+                          label={`${playlistCounts[pl.id] ?? 0} videos`}
+                          size="small"
+                          variant="outlined"
+                          sx={{ height: 20, fontSize: '0.7rem' }}
+                        />
+                      </Box>
                       {pl.description && (
                         <Typography variant="caption" color="text.secondary" noWrap>{pl.description}</Typography>
                       )}
