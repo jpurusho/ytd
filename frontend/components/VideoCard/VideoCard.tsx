@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Card, CardMedia, CardContent, Typography, Box, IconButton, Chip } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import type { VideoInfo } from '@shared/types';
+
+export const VIDEO_DRAG_TYPE = 'application/x-ytd-video';
 
 interface Props {
   video: VideoInfo;
@@ -11,6 +13,7 @@ interface Props {
   onPreview?: (video: VideoInfo) => void;
   onAddToPlaylist?: (video: VideoInfo) => void;
   disabled?: boolean;
+  draggable?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -27,8 +30,13 @@ function formatViews(count: number): string {
   return `${count} views`;
 }
 
-export default function VideoCard({ video, onDownload, onPreview, onAddToPlaylist, disabled }: Props) {
+export default function VideoCard({ video, onDownload, onPreview, onAddToPlaylist, disabled, draggable = true }: Props) {
   const isPrivate = disabled || video.title === 'Private video' || video.title === 'Deleted video';
+
+  function handleDragStart(e: React.DragEvent) {
+    e.dataTransfer.setData(VIDEO_DRAG_TYPE, JSON.stringify(video));
+    e.dataTransfer.effectAllowed = 'copy';
+  }
 
   if (isPrivate) {
     return (
@@ -53,6 +61,8 @@ export default function VideoCard({ video, onDownload, onPreview, onAddToPlaylis
 
   return (
     <Card
+      draggable={draggable && !isPrivate}
+      onDragStart={handleDragStart}
       sx={{
         display: 'flex',
         flexDirection: 'column',
@@ -61,6 +71,7 @@ export default function VideoCard({ video, onDownload, onPreview, onAddToPlaylis
         border: '1px solid',
         borderColor: 'divider',
         transition: 'border-color 0.2s',
+        cursor: draggable ? 'grab' : undefined,
         '&:hover': { borderColor: 'primary.main' },
       }}
       elevation={0}

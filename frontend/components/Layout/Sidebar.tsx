@@ -18,7 +18,8 @@ import PlaylistPlayIcon from '@mui/icons-material/PlaylistPlay';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import type { UserInfo, LocalPlaylist } from '@shared/types';
+import type { UserInfo, LocalPlaylist, VideoInfo, LocalPlaylistVideoItem } from '@shared/types';
+import { VIDEO_DRAG_TYPE } from '../VideoCard/VideoCard';
 
 export type Page = 'dashboard' | 'search' | 'browse' | 'playlists' | 'downloads' | 'history' | 'settings';
 
@@ -48,10 +49,46 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
   const [newName, setNewName] = useState('');
   const [renaming, setRenaming] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [dragOverPlaylistId, setDragOverPlaylistId] = useState<number | null>(null);
 
   useEffect(() => {
     loadPlaylists();
   }, []);
+
+  function handlePlaylistDragOver(e: React.DragEvent, playlistId: number) {
+    if (e.dataTransfer.types.includes(VIDEO_DRAG_TYPE)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      setDragOverPlaylistId(playlistId);
+    }
+  }
+
+  function handlePlaylistDragLeave() {
+    setDragOverPlaylistId(null);
+  }
+
+  async function handlePlaylistDrop(e: React.DragEvent, playlistId: number) {
+    e.preventDefault();
+    setDragOverPlaylistId(null);
+
+    const data = e.dataTransfer.getData(VIDEO_DRAG_TYPE);
+    if (!data) return;
+
+    try {
+      const video: VideoInfo = JSON.parse(data);
+      const item: LocalPlaylistVideoItem = {
+        videoId: video.id,
+        title: video.title,
+        channel: video.channel,
+        thumbnailUrl: video.thumbnail,
+        duration: video.duration,
+      };
+      await window.api.playlists.addItem(playlistId, item);
+      loadPlaylists();
+    } catch (err) {
+      console.error('Failed to add video to playlist:', err);
+    }
+  }
 
   useEffect(() => {
     if (currentPage === 'playlists') loadPlaylists();
@@ -192,7 +229,18 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
                 key={pl.id}
                 onClick={() => { onPageChange('playlists'); onSelectPlaylist?.(pl.id); }}
                 onContextMenu={(e) => handleContextMenu(e, pl.id)}
-                sx={{ borderRadius: 1.5, py: 0.5, mb: 0.25 }}
+                onDragOver={(e) => handlePlaylistDragOver(e, pl.id)}
+                onDragLeave={handlePlaylistDragLeave}
+                onDrop={(e) => handlePlaylistDrop(e, pl.id)}
+                sx={{
+                  borderRadius: 1.5,
+                  py: 0.5,
+                  mb: 0.25,
+                  bgcolor: dragOverPlaylistId === pl.id ? 'action.hover' : undefined,
+                  border: dragOverPlaylistId === pl.id ? '2px solid' : '2px solid transparent',
+                  borderColor: dragOverPlaylistId === pl.id ? 'primary.main' : 'transparent',
+                  transition: 'background-color 0.15s, border-color 0.15s',
+                }}
               >
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <PlaylistPlayIcon sx={{ fontSize: 16, color: 'text.secondary' }} />

@@ -1,12 +1,36 @@
-import React, { useState, useCallback } from 'react';
-import { Box, TextField, InputAdornment, Grid, Typography, CircularProgress, Button, Checkbox } from '@mui/material';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { Box, TextField, InputAdornment, Grid, Typography, CircularProgress, Button, Checkbox, Paper, List, ListItemButton, ListItemText } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
+import HistoryIcon from '@mui/icons-material/History';
 import VideoCard from '../components/VideoCard/VideoCard';
 import FormatSelector from '../components/FormatSelector/FormatSelector';
 import YouTubePreview from '../components/YouTubePreview/YouTubePreview';
 import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
 import type { VideoInfo, DownloadRequest } from '@shared/types';
+
+const SEARCH_HISTORY_KEY = 'ytd_search_history';
+const MAX_HISTORY = 20;
+
+function getSearchHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSearchHistory(query: string): void {
+  const history = getSearchHistory();
+  const filtered = history.filter((h) => h.toLowerCase() !== query.toLowerCase());
+  filtered.unshift(query);
+  const trimmed = filtered.slice(0, MAX_HISTORY);
+  localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(trimmed));
+}
 
 interface Props {
   onDownload: (request: DownloadRequest) => void;
@@ -22,10 +46,58 @@ export default function Search({ onDownload }: Props) {
   const [multiSelect, setMultiSelect] = useState(false);
   const [selectedVideos, setSelectedVideos] = useState<Set<string>>(new Set());
   const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(e.target as Node) &&
+        inputRef.current &&
+        !inputRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  function updateSuggestions(value: string) {
+    const history = getSearchHistory();
+    if (!value.trim()) {
+      setSuggestions(history.slice(0, 10));
+    } else {
+      const lower = value.toLowerCase();
+      setSuggestions(history.filter((h) => h.toLowerCase().includes(lower)));
+    }
+  }
+
+  function handleInputFocus() {
+    updateSuggestions(query);
+    setShowSuggestions(true);
+  }
+
+  function handleInputChange(value: string) {
+    setQuery(value);
+    updateSuggestions(value);
+    setShowSuggestions(true);
+  }
+
+  function selectSuggestion(suggestion: string) {
+    setQuery(suggestion);
+    setShowSuggestions(false);
+  }
 
   const handleSearch = useCallback(async () => {
     const trimmed = query.trim();
     if (!trimmed) return;
+
+    setShowSuggestions(false);
+    saveSearchHistory(trimmed);
 
     setLoading(true);
     setSearched(true);
@@ -43,6 +115,7 @@ export default function Search({ onDownload }: Props) {
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') handleSearch();
+    if (e.key === 'Escape') setShowSuggestions(false);
   }
 
   function toggleVideoSelect(videoId: string) {
@@ -58,15 +131,17 @@ export default function Search({ onDownload }: Props) {
 
   return (
     <Box sx={{ p: 3, height: '100%', overflow: 'auto' }}>
-      <Box display="flex" gap={1} mb={3}>
+      <Box display="flex" gap={1} mb={3} sx={{ position: 'relative' }}>
         <TextField
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => handleInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={handleInputFocus}
           placeholder="Search YouTube videos..."
           fullWidth
           size="small"
           autoFocus
+          inputRef={inputRef}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -75,6 +150,38 @@ export default function Search({ onDownload }: Props) {
             ),
           }}
         />
+        {showSuggestions && suggestions.length > 0 && (
+          <Paper
+            ref={suggestionsRef}
+            elevation={4}
+            sx={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              right: 0,
+              zIndex: 10,
+              maxHeight: 300,
+              overflow: 'auto',
+              mt: 0.5,
+            }}
+          >
+            <List dense disablePadding>
+              {suggestions.map((suggestion, idx) => (
+                <ListItemButton
+                  key={idx}
+                  onClick={() => selectSuggestion(suggestion)}
+                  sx={{ px: 2, py: 0.75 }}
+                >
+                  <HistoryIcon sx={{ fontSize: 16, mr: 1.5, color: 'text.secondary' }} />
+                  <ListItemText
+                    primary={suggestion}
+                    primaryTypographyProps={{ fontSize: '0.875rem' }}
+                  />
+                </ListItemButton>
+              ))}
+            </List>
+          </Paper>
+        )}
       </Box>
 
       {/* Multi-select toolbar */}
