@@ -1,0 +1,52 @@
+{
+  "name": "ytd",
+  "version": "1.0.0",
+  "description": "YouTube Downloader Desktop Application",
+  "main": "dist/desktop/index.js",
+  "author": "Jerome Purushotham",
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "concurrently -k \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on tcp:5173 && tsc -p tsconfig.main.json && electron .",
+    "prebuild": "node -e \"const{config}=require('dotenv');config();const fs=require('fs');fs.mkdirSync('dist',{recursive:true});const c={clientId:process.env.GOOGLE_CLIENT_ID||'',clientSecret:process.env.GOOGLE_CLIENT_SECRET||''};if(c.clientId)fs.writeFileSync('dist/oauth-config.json',JSON.stringify(c));\"",
+    "build": "tsc -p tsconfig.main.json && vite build",
+    "download-bins": "bash scripts/download-binaries.sh",
+    "dist": "npm run build && electron-builder build --mac --publish never",
+    "dist:win": "npm run build && electron-builder build --win",
+    "dist:linux": "npm run build && electron-builder build --linux",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "dotenv": "^16.4.0",
+    "electron-updater": "^6.3.0",
+    "google-auth-library": "^9.14.0",
+    "googleapis": "^140.0.0",
+    "node-cron": "^4.2.1"
+  },
+  "devDependencies": {
+    "@emotion/react": "^11.13.3",
+    "@emotion/styled": "^11.13.0",
+    "@mui/icons-material": "^5.16.7",
+    "@mui/material": "^5.16.7",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.0",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^4.1.2",
+    "wait-on": "^8.0.1"
+  }
+}

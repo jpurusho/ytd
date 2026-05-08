@@ -1,11 +1,11 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
+node_modules/
 dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
+release/
+.env
+*.db
+bin/mac/
+bin/win/
+bin/linux/
+legacy/
+.DS_Store
 *.log
