@@ -239,6 +239,13 @@ export class DownloadEngine {
     const ffmpegDir = path.dirname(ffmpegPath);
     args.push('--ffmpeg-location', ffmpegDir);
 
+    // Browser cookies for authenticated downloads
+    const useCookies = getSetting('use_browser_cookies');
+    const cookieBrowser = getSetting('cookie_browser') || 'chrome';
+    if (useCookies === 'true') {
+      args.push('--cookies-from-browser', cookieBrowser);
+    }
+
     args.push(item.url);
     return args;
   }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, TextField, Button, FormControl,
   InputLabel, Select, MenuItem, Divider, Alert, Chip,
+  Switch, FormControlLabel,
 } from '@mui/material';
 import { useAppTheme } from '../theme/ThemeContext';
 
@@ -9,6 +10,8 @@ export default function Settings() {
   const { currentTheme, setThemeId, availableThemes } = useAppTheme();
   const [outputDir, setOutputDir] = useState('');
   const [maxConcurrent, setMaxConcurrent] = useState('3');
+  const [useBrowserCookies, setUseBrowserCookies] = useState(false);
+  const [cookieBrowser, setCookieBrowser] = useState('chrome');
   const [toolStatus, setToolStatus] = useState<any>(null);
   const [saved, setSaved] = useState(false);
   const [version, setVersion] = useState('');
@@ -31,6 +34,12 @@ export default function Settings() {
 
     const concurrent = await window.api.app.getSetting('max_concurrent');
     if (concurrent) setMaxConcurrent(concurrent);
+
+    const cookies = await window.api.app.getSetting('use_browser_cookies');
+    if (cookies === 'true') setUseBrowserCookies(true);
+
+    const browser = await window.api.app.getSetting('cookie_browser');
+    if (browser) setCookieBrowser(browser);
   }
 
   async function handleSelectDir() {
@@ -83,6 +92,50 @@ export default function Settings() {
             </Select>
           </FormControl>
           <Button variant="outlined" size="small" onClick={handleSaveConcurrent}>Save</Button>
+        </Box>
+      </Paper>
+
+      {/* Browser Cookies Auth */}
+      <Paper sx={{ p: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', mb: 2 }} elevation={0}>
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>Browser Authentication</Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+          Use your browser's YouTube login cookies to download restricted videos (age-restricted, region-locked, etc.)
+        </Typography>
+        <Box display="flex" alignItems="center" gap={2}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={useBrowserCookies}
+                onChange={async (e) => {
+                  const val = e.target.checked;
+                  setUseBrowserCookies(val);
+                  await window.api.app.setSetting('use_browser_cookies', val ? 'true' : 'false');
+                  showSaved();
+                }}
+                size="small"
+              />
+            }
+            label={<Typography variant="body2">Use browser cookies</Typography>}
+          />
+          {useBrowserCookies && (
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <Select
+                value={cookieBrowser}
+                onChange={async (e) => {
+                  const val = e.target.value;
+                  setCookieBrowser(val);
+                  await window.api.app.setSetting('cookie_browser', val);
+                  showSaved();
+                }}
+              >
+                <MenuItem value="chrome">Chrome</MenuItem>
+                <MenuItem value="firefox">Firefox</MenuItem>
+                <MenuItem value="safari">Safari</MenuItem>
+                <MenuItem value="edge">Edge</MenuItem>
+                <MenuItem value="brave">Brave</MenuItem>
+              </Select>
+            </FormControl>
+          )}
         </Box>
       </Paper>
 
