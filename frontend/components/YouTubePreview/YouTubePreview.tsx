@@ -40,9 +40,10 @@ export default function YouTubePreview({ video, onClose, onDownload }: Props) {
       if (!dragging.current) return;
       const dx = ev.clientX - dragStart.current.mx;
       const dy = ev.clientY - dragStart.current.my;
+      // right increases when mouse moves left, bottom increases when mouse moves up
       setPosition({
         x: Math.max(0, dragStart.current.x - dx),
-        y: Math.max(0, dragStart.current.y + dy),
+        y: Math.max(0, dragStart.current.y - dy),
       });
     }
     function onUp() {

@@ -134,7 +134,7 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
       const dy = ev.clientY - dragStart.current.my;
       setPosition({
         x: Math.max(0, dragStart.current.x - dx),
-        y: Math.max(0, dragStart.current.y + dy),
+        y: Math.max(0, dragStart.current.y - dy),
       });
     }
     function onUp() {
