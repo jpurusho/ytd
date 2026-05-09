@@ -32,6 +32,7 @@ mac:
       arch: [universal]
   darkModeSupport: true
   identity: null
+  x64ArchFiles: "Contents/Resources/bin/*"
 
 win:
   target:
