@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Box, TextField, InputAdornment, Grid, Typography, CircularProgress, Button, Checkbox, Paper, List, ListItemButton, ListItemText } from '@mui/material';
+import { Box, TextField, InputAdornment, Grid, Typography, CircularProgress, Button, Checkbox, Paper, List, ListItemButton, ListItemText, IconButton } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
+import ClearIcon from '@mui/icons-material/Clear';
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
 import HistoryIcon from '@mui/icons-material/History';
 import VideoCard from '../components/VideoCard/VideoCard';
@@ -37,7 +38,10 @@ interface Props {
 }
 
 export default function Search({ onDownload }: Props) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => {
+    const history = getSearchHistory();
+    return history.length > 0 ? history[0] : '';
+  });
   const [results, setResults] = useState<VideoInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -148,6 +152,13 @@ export default function Search({ onDownload }: Props) {
                 <SearchIcon color="action" />
               </InputAdornment>
             ),
+            endAdornment: query ? (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => { setQuery(''); setResults([]); setSearched(false); }} title="Clear search">
+                  <ClearIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </InputAdornment>
+            ) : undefined,
           }}
         />
         {showSuggestions && suggestions.length > 0 && (
