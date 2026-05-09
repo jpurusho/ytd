@@ -157,7 +157,7 @@ export default function YouTubePreview({ video, onClose, onDownload }: Props) {
       {/* YouTube embed */}
       <Box sx={{ flex: 1, position: 'relative', bgcolor: '#000' }}>
         <iframe
-          src={`https://www.youtube-nocookie.com/embed/${video.id}?autoplay=1&rel=0`}
+          src={`https://www.youtube-nocookie.com/embed/${video.id}?autoplay=1&rel=0&origin=http://localhost`}
           style={{
             position: 'absolute',
             top: 0,
@@ -169,6 +169,24 @@ export default function YouTubePreview({ video, onClose, onDownload }: Props) {
           allow="autoplay; encrypted-media"
           allowFullScreen
         />
+        {/* Fallback for embed-restricted videos */}
+        <Box sx={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          px: 1.5, py: 0.5, bgcolor: 'rgba(0,0,0,0.8)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <Typography variant="caption" color="#aaa" sx={{ fontSize: '0.65rem' }}>
+            Video won't play? Some videos block embedding.
+          </Typography>
+          <Typography
+            variant="caption"
+            color="primary.main"
+            sx={{ cursor: 'pointer', fontSize: '0.65rem', flexShrink: 0, ml: 1 }}
+            onClick={() => window.api.app.openExternal(`https://www.youtube.com/watch?v=${video.id}`)}
+          >
+            Open on YouTube
+          </Typography>
+        </Box>
       </Box>
     </Box>
   );

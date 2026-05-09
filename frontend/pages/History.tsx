@@ -10,8 +10,10 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
 import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
-import type { DownloadRecord } from '@shared/types';
+import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
+import type { DownloadRecord, VideoInfo } from '@shared/types';
 
 type SortField = 'title' | 'channel' | 'format' | 'fileSize' | 'resolution' | 'downloadedAt';
 type SortOrder = 'asc' | 'desc';
@@ -24,6 +26,7 @@ export default function History() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [converting, setConverting] = useState<Set<number>>(new Set());
+  const [addToPlaylistVideo, setAddToPlaylistVideo] = useState<VideoInfo | null>(null);
 
   useEffect(() => {
     loadHistory();
@@ -250,6 +253,9 @@ export default function History() {
                     <IconButton size="small" onClick={() => openInFinder(record.filePath)} title="Show in Finder">
                       <FolderOpenIcon fontSize="small" />
                     </IconButton>
+                    <IconButton size="small" onClick={() => setAddToPlaylistVideo({ id: record.videoId, title: record.title, channel: record.channel, channelId: '', thumbnail: record.thumbnailUrl || '', duration: 0, publishedAt: record.downloadedAt, viewCount: 0, description: '' })} title="Add to playlist">
+                      <PlaylistAddIcon fontSize="small" />
+                    </IconButton>
                     <IconButton size="small" onClick={() => openInYouTube(record.videoId)} title="Open on YouTube">
                       <OpenInNewIcon fontSize="small" />
                     </IconButton>
@@ -268,6 +274,12 @@ export default function History() {
         open={!!playingRecord}
         record={playingRecord}
         onClose={() => setPlayingRecord(null)}
+      />
+
+      <AddToPlaylistDialog
+        open={!!addToPlaylistVideo}
+        videos={addToPlaylistVideo ? [addToPlaylistVideo] : []}
+        onClose={() => setAddToPlaylistVideo(null)}
       />
     </Box>
   );

@@ -7,8 +7,10 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
+import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
 import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
 import YouTubePreview from '../components/YouTubePreview/YouTubePreview';
+import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
 import type { DownloadRecord, VideoInfo } from '@shared/types';
 
 export default function DashboardPage() {
@@ -17,6 +19,7 @@ export default function DashboardPage() {
   const [fileStatus, setFileStatus] = useState<Record<number, boolean>>({});
   const [playingRecord, setPlayingRecord] = useState<DownloadRecord | null>(null);
   const [previewVideo, setPreviewVideo] = useState<VideoInfo | null>(null);
+  const [addToPlaylistVideo, setAddToPlaylistVideo] = useState<VideoInfo | null>(null);
 
   useEffect(() => {
     loadData();
@@ -198,6 +201,9 @@ export default function DashboardPage() {
                   >
                     <FolderOpenIcon fontSize="small" />
                   </IconButton>
+                  <IconButton size="small" onClick={() => setAddToPlaylistVideo({ id: record.videoId, title: record.title, channel: record.channel, channelId: '', thumbnail: record.thumbnailUrl || '', duration: 0, publishedAt: record.downloadedAt, viewCount: 0, description: '' })} title="Add to playlist">
+                    <PlaylistAddIcon fontSize="small" />
+                  </IconButton>
                   <IconButton size="small" onClick={() => window.api.app.openExternal(`https://www.youtube.com/watch?v=${record.videoId}`)} title="Open on YouTube">
                     <OpenInNewIcon fontSize="small" />
                   </IconButton>
@@ -218,6 +224,12 @@ export default function DashboardPage() {
         video={previewVideo}
         onClose={() => setPreviewVideo(null)}
         onDownload={() => setPreviewVideo(null)}
+      />
+
+      <AddToPlaylistDialog
+        open={!!addToPlaylistVideo}
+        videos={addToPlaylistVideo ? [addToPlaylistVideo] : []}
+        onClose={() => setAddToPlaylistVideo(null)}
       />
     </Box>
   );
