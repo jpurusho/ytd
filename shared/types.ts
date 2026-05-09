@@ -224,6 +224,8 @@ export interface ElectronAPI {
     getSetting: (key: string) => Promise<string | null>;
     setSetting: (key: string, value: string) => Promise<void>;
     checkForUpdates: () => Promise<{ status: string; version?: string; url?: string; message?: string }>;
+    downloadUpdate: (url: string) => Promise<{ success: boolean; path: string; size: number }>;
+    onDownloadProgress: (callback: (data: { downloaded: number; total: number; percent: number }) => void) => () => void;
     checkTools: () => Promise<{ ytDlp: { installed: boolean; path: string; version?: string }; ffmpeg: { installed: boolean; path: string; version?: string } }>;
     getVideoFileUrl: (filePath: string) => Promise<{ url?: string; error?: string }>;
     fileExists: (filePath: string) => Promise<boolean>;

@@ -68,6 +68,12 @@ const api: ElectronAPI = {
     getSetting: (key: string) => ipcRenderer.invoke('app:getSetting', key),
     setSetting: (key: string, value: string) => ipcRenderer.invoke('app:setSetting', key, value),
     checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
+    downloadUpdate: (url: string) => ipcRenderer.invoke('app:downloadUpdate', url),
+    onDownloadProgress: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on('app:downloadProgress', handler);
+      return () => ipcRenderer.removeListener('app:downloadProgress', handler);
+    },
     checkTools: () => ipcRenderer.invoke('app:checkTools'),
     getVideoFileUrl: (filePath: string) => ipcRenderer.invoke('app:getVideoFileUrl', filePath),
     fileExists: (filePath: string) => ipcRenderer.invoke('app:fileExists', filePath),

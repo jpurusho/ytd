@@ -46,6 +46,10 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
   const [playlists, setPlaylists] = useState<(LocalPlaylist & { itemCount?: number })[]>([]);
   const [version, setVersion] = useState('');
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
+  const [updateUrl, setUpdateUrl] = useState('');
+  const [downloading, setDownloading] = useState(false);
+  const [downloadPercent, setDownloadPercent] = useState(0);
+  const [downloadedPath, setDownloadedPath] = useState('');
   const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; playlistId: number } | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -57,7 +61,10 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
     loadPlaylists();
     window.api.app.getVersion().then(setVersion);
     window.api.app.checkForUpdates().then((result) => {
-      if (result.status === 'available') setUpdateAvailable(result.version || null);
+      if (result.status === 'available') {
+        setUpdateAvailable(result.version || null);
+        setUpdateUrl(result.url || '');
+      }
     });
   }, []);
 
@@ -168,15 +175,55 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
             </Typography>
           )}
         </Box>
-        {updateAvailable && (
-          <Typography
-            variant="caption"
-            color="primary"
-            sx={{ cursor: 'pointer', display: 'block', mt: 0.5, ml: 4.5 }}
-            onClick={() => window.api.app.openExternal(`https://github.com/jpurusho/ytd/releases/latest`)}
-          >
-            v{updateAvailable} available — update
-          </Typography>
+        {updateAvailable && !downloadedPath && (
+          <Box sx={{ mt: 0.5, ml: 4.5 }}>
+            {!downloading ? (
+              <Typography
+                variant="caption"
+                color="primary"
+                sx={{ cursor: 'pointer' }}
+                onClick={async () => {
+                  if (!updateUrl) return;
+                  setDownloading(true);
+                  setDownloadPercent(0);
+                  const unsub = window.api.app.onDownloadProgress((data) => setDownloadPercent(data.percent));
+                  try {
+                    const result = await window.api.app.downloadUpdate(updateUrl);
+                    setDownloadedPath(result.path);
+                  } catch {}
+                  setDownloading(false);
+                  unsub();
+                }}
+              >
+                v{updateAvailable} available — download
+              </Typography>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                Downloading... {downloadPercent}%
+              </Typography>
+            )}
+          </Box>
+        )}
+        {downloadedPath && (
+          <Box sx={{ mt: 0.5, ml: 4.5 }}>
+            <Typography variant="caption" color="success.main" sx={{ display: 'block' }}>
+              Downloaded! To install:
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.65rem', lineHeight: 1.4 }}>
+              1. Quit ytd{'\n'}
+              2. Extract the .zip{'\n'}
+              3. Replace ytd.app in /Applications{'\n'}
+              4. Run: xattr -rc /Applications/ytd.app
+            </Typography>
+            <Typography
+              variant="caption"
+              color="primary"
+              sx={{ cursor: 'pointer', display: 'block', mt: 0.25 }}
+              onClick={() => window.api.app.showInFinder(downloadedPath)}
+            >
+              Show in Finder
+            </Typography>
+          </Box>
         )}
       </Box>
 

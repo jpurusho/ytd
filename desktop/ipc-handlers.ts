@@ -1,4 +1,6 @@
-import { ipcMain, dialog, shell, app } from 'electron';
+import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron';
+import * as path from 'path';
+import * as fs from 'fs';
 import { GoogleAuthService } from './services/google-auth';
 import { YouTubeApiService } from './services/youtube-api';
 import { QueueManager } from './services/queue-manager';
@@ -201,7 +203,8 @@ export function registerIpcHandlers(): void {
       });
 
       const latestVersion = release.tag_name?.replace(/^v/, '') || '';
-      const downloadUrl = release.html_url || '';
+      const zipAsset = (release.assets || []).find((a: any) => a.name?.endsWith('.zip'));
+      const downloadUrl = zipAsset?.browser_download_url || release.html_url || '';
 
       if (!latestVersion) return { status: 'error', message: 'Could not determine latest version' };
 
@@ -213,6 +216,55 @@ export function registerIpcHandlers(): void {
     } catch (err: any) {
       return { status: 'error', message: err.message };
     }
+  });
+
+  ipcMain.handle('app:downloadUpdate', async (_event, downloadUrl: string) => {
+    const https = require('https');
+    const os = require('os');
+    const dir = path.join(os.homedir(), 'Downloads');
+    const fileName = downloadUrl.split('/').pop() || 'ytd-update.zip';
+    const destPath = path.join(dir, fileName);
+
+    return new Promise((resolve, reject) => {
+      const follow = (url: string) => {
+        https.get(url, { headers: { 'User-Agent': 'ytd-updater' } }, (res: any) => {
+          if (res.statusCode === 301 || res.statusCode === 302) {
+            return follow(res.headers.location);
+          }
+          if (res.statusCode !== 200) {
+            return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+          }
+
+          const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+          let downloaded = 0;
+          const file = fs.createWriteStream(destPath);
+
+          res.on('data', (chunk: Buffer) => {
+            downloaded += chunk.length;
+            for (const win of BrowserWindow.getAllWindows()) {
+              if (!win.isDestroyed()) {
+                win.webContents.send('app:downloadProgress', {
+                  downloaded,
+                  total: totalBytes,
+                  percent: totalBytes ? Math.round((downloaded / totalBytes) * 100) : 0,
+                });
+              }
+            }
+          });
+
+          res.pipe(file);
+          file.on('finish', () => {
+            file.close();
+            resolve({ success: true, path: destPath, size: downloaded });
+          });
+          file.on('error', (err: any) => {
+            fs.unlinkSync(destPath);
+            reject(err);
+          });
+        }).on('error', reject);
+      };
+      follow(downloadUrl);
+    });
   });
 
   // ─── Video Playback ───────────────────────────────────────────────────────
