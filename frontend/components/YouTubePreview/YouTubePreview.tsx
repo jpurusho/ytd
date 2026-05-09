@@ -1,7 +1,9 @@
-import React from 'react';
-import { Box, IconButton, Typography } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, IconButton, Typography, Tooltip } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
+import LinkIcon from '@mui/icons-material/Link';
+import CheckIcon from '@mui/icons-material/Check';
 import type { VideoInfo } from '@shared/types';
 
 interface Props {
@@ -11,7 +13,17 @@ interface Props {
 }
 
 export default function YouTubePreview({ video, onClose, onDownload }: Props) {
+  const [copied, setCopied] = useState(false);
+
   if (!video) return null;
+
+  function handleCopyLink() {
+    const url = `https://www.youtube.com/watch?v=${video!.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   return (
     <Box
@@ -20,9 +32,12 @@ export default function YouTubePreview({ video, onClose, onDownload }: Props) {
         bottom: 16,
         right: 16,
         width: 400,
+        minWidth: 300,
+        maxWidth: '80vw',
         zIndex: 1300,
         borderRadius: 2,
-        overflow: 'hidden',
+        overflow: 'auto',
+        resize: 'both',
         boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
         border: '1px solid',
         borderColor: 'divider',
@@ -34,6 +49,11 @@ export default function YouTubePreview({ video, onClose, onDownload }: Props) {
         <Typography variant="caption" fontWeight={500} noWrap flex={1}>
           {video.title}
         </Typography>
+        <Tooltip title={copied ? 'Copied!' : 'Copy link'}>
+          <IconButton size="small" onClick={handleCopyLink}>
+            {copied ? <CheckIcon sx={{ fontSize: 16, color: 'success.main' }} /> : <LinkIcon sx={{ fontSize: 16 }} />}
+          </IconButton>
+        </Tooltip>
         <IconButton size="small" color="primary" onClick={() => onDownload(video)} title="Download this video">
           <DownloadIcon sx={{ fontSize: 16 }} />
         </IconButton>
