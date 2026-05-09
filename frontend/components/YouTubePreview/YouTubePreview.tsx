@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Box, IconButton, Typography, Tooltip } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -14,6 +14,10 @@ interface Props {
 
 export default function YouTubePreview({ video, onClose, onDownload }: Props) {
   const [copied, setCopied] = useState(false);
+  const [width, setWidth] = useState(420);
+  const resizing = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
 
   if (!video) return null;
 
@@ -25,25 +29,60 @@ export default function YouTubePreview({ video, onClose, onDownload }: Props) {
     });
   }
 
+  function handleResizeStart(e: React.MouseEvent) {
+    e.preventDefault();
+    resizing.current = true;
+    startX.current = e.clientX;
+    startWidth.current = width;
+
+    function onMouseMove(ev: MouseEvent) {
+      if (!resizing.current) return;
+      const delta = startX.current - ev.clientX;
+      const newWidth = Math.min(Math.max(startWidth.current + delta, 320), 800);
+      setWidth(newWidth);
+    }
+
+    function onMouseUp() {
+      resizing.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
   return (
     <Box
       sx={{
         position: 'fixed',
         bottom: 16,
         right: 16,
-        width: 400,
-        minWidth: 300,
-        maxWidth: '80vw',
+        width,
         zIndex: 1300,
         borderRadius: 2,
-        overflow: 'auto',
-        resize: 'both',
+        overflow: 'hidden',
         boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
         border: '1px solid',
         borderColor: 'divider',
         bgcolor: 'background.paper',
       }}
     >
+      {/* Resize handle — left edge */}
+      <Box
+        onMouseDown={handleResizeStart}
+        sx={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: 6,
+          height: '100%',
+          cursor: 'ew-resize',
+          zIndex: 2,
+          '&:hover': { bgcolor: 'primary.main', opacity: 0.3 },
+        }}
+      />
+
       {/* Title bar */}
       <Box sx={{ px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', gap: 1, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
         <Typography variant="caption" fontWeight={500} noWrap flex={1}>
