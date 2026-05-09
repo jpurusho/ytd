@@ -44,6 +44,8 @@ const navItems: Array<{ page: Page; label: string; icon: React.ReactNode }> = [
 export default function Sidebar({ currentPage, onPageChange, user, onLogout, queueCount, onSelectPlaylist }: Props) {
   const [playlistsExpanded, setPlaylistsExpanded] = useState(true);
   const [playlists, setPlaylists] = useState<(LocalPlaylist & { itemCount?: number })[]>([]);
+  const [version, setVersion] = useState('');
+  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; playlistId: number } | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -53,6 +55,10 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
 
   useEffect(() => {
     loadPlaylists();
+    window.api.app.getVersion().then(setVersion);
+    window.api.app.checkForUpdates().then((result) => {
+      if (result.status === 'available') setUpdateAvailable(result.version || null);
+    });
   }, []);
 
   function handlePlaylistDragOver(e: React.DragEvent, playlistId: number) {
@@ -146,11 +152,28 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
         pt: '52px',
       }}
     >
-      <Box sx={{ px: 2, py: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-        <img src="./icon.png" alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-        <Typography variant="h6" fontWeight={700} color="primary">
-          YTD
-        </Typography>
+      <Box sx={{ px: 2, py: 2 }}>
+        <Box display="flex" alignItems="center" gap={1}>
+          <img src="./icon.png" alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          <Typography variant="h6" fontWeight={700} color="primary">
+            YTD
+          </Typography>
+          {version && (
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+              v{version}
+            </Typography>
+          )}
+        </Box>
+        {updateAvailable && (
+          <Typography
+            variant="caption"
+            color="primary"
+            sx={{ cursor: 'pointer', display: 'block', mt: 0.5, ml: 4.5 }}
+            onClick={() => window.api.app.openExternal(`https://github.com/jpurusho/ytd/releases/latest`)}
+          >
+            v{updateAvailable} available — update
+          </Typography>
+        )}
       </Box>
 
       <List sx={{ flex: 1, px: 1, overflow: 'auto' }}>
