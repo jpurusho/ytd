@@ -14,7 +14,9 @@ import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DownloadIcon from '@mui/icons-material/Download';
-import type { LocalPlaylist, LocalPlaylistItem, PlaylistInfo, DownloadRequest } from '@shared/types';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import YouTubePreview from '../components/YouTubePreview/YouTubePreview';
+import type { LocalPlaylist, LocalPlaylistItem, PlaylistInfo, DownloadRequest, VideoInfo } from '@shared/types';
 
 interface Props {
   onDownload: (request: DownloadRequest) => void;
@@ -160,6 +162,8 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
     }
   }
 
+  const [previewVideo, setPreviewVideo] = useState<VideoInfo | null>(null);
+
   function handleDownloadItem(item: LocalPlaylistItem) {
     const request: DownloadRequest = {
       videoId: item.videoId,
@@ -171,6 +175,20 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
       quality: 'best',
     };
     onDownload(request);
+  }
+
+  function handlePlayItem(item: LocalPlaylistItem) {
+    setPreviewVideo({
+      id: item.videoId,
+      title: item.title,
+      channel: item.channel,
+      channelId: '',
+      thumbnail: item.thumbnailUrl,
+      duration: item.duration,
+      publishedAt: '',
+      viewCount: 0,
+      description: '',
+    });
   }
 
   function formatDuration(seconds: number): string {
@@ -243,12 +261,17 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
                 <Box sx={{ mr: 1, color: 'text.secondary', cursor: 'grab' }}>
                   <DragIndicatorIcon fontSize="small" />
                 </Box>
-                <ListItemAvatar sx={{ minWidth: 80 }}>
-                  <img
-                    src={item.thumbnailUrl}
-                    alt=""
-                    style={{ width: 64, height: 36, objectFit: 'cover', borderRadius: 4 }}
-                  />
+                <ListItemAvatar sx={{ minWidth: 80, cursor: 'pointer' }} onClick={() => handlePlayItem(item)}>
+                  <Box sx={{ position: 'relative', '&:hover .play-overlay': { opacity: 1 } }}>
+                    <img
+                      src={item.thumbnailUrl}
+                      alt=""
+                      style={{ width: 64, height: 36, objectFit: 'cover', borderRadius: 4, display: 'block' }}
+                    />
+                    <Box className="play-overlay" sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.4)', opacity: 0, transition: 'opacity 0.15s', borderRadius: 1 }}>
+                      <PlayArrowIcon sx={{ color: '#fff', fontSize: 20 }} />
+                    </Box>
+                  </Box>
                 </ListItemAvatar>
                 <ListItemText
                   primary={item.title}
@@ -257,6 +280,9 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
                   secondaryTypographyProps={{ variant: 'caption' }}
                 />
                 <ListItemSecondaryAction>
+                  <IconButton size="small" onClick={() => handlePlayItem(item)} title="Play">
+                    <PlayArrowIcon fontSize="small" />
+                  </IconButton>
                   <IconButton size="small" onClick={() => handleDownloadItem(item)} title="Download">
                     <DownloadIcon fontSize="small" />
                   </IconButton>
@@ -268,6 +294,18 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
             ))}
           </List>
         )}
+
+        <YouTubePreview
+          video={previewVideo}
+          onClose={() => setPreviewVideo(null)}
+          onDownload={(v) => {
+            setPreviewVideo(null);
+            onDownload({
+              videoId: v.id, title: v.title, channel: v.channel, thumbnailUrl: v.thumbnail,
+              url: `https://www.youtube.com/watch?v=${v.id}`, format: 'mp4', quality: 'best',
+            });
+          }}
+        />
 
         {/* Edit Dialog */}
         <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="xs" fullWidth>
