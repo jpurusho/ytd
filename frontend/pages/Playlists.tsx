@@ -15,8 +15,10 @@ import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DownloadIcon from '@mui/icons-material/Download';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import PlayCircleIcon from '@mui/icons-material/PlayCircle';
 import YouTubePreview from '../components/YouTubePreview/YouTubePreview';
-import type { LocalPlaylist, LocalPlaylistItem, PlaylistInfo, DownloadRequest, VideoInfo } from '@shared/types';
+import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
+import type { LocalPlaylist, LocalPlaylistItem, PlaylistInfo, DownloadRequest, VideoInfo, DownloadRecord } from '@shared/types';
 
 interface Props {
   onDownload: (request: DownloadRequest) => void;
@@ -163,6 +165,26 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
   }
 
   const [previewVideo, setPreviewVideo] = useState<VideoInfo | null>(null);
+  const [localFiles, setLocalFiles] = useState<Record<string, DownloadRecord>>({});
+  const [playingLocal, setPlayingLocal] = useState<DownloadRecord | null>(null);
+
+  useEffect(() => {
+    if (selectedPlaylist && playlistItems.length > 0) {
+      loadLocalFiles();
+    }
+  }, [playlistItems]);
+
+  async function loadLocalFiles() {
+    const history = await window.api.downloads.getHistory(1000);
+    const map: Record<string, DownloadRecord> = {};
+    for (const record of history) {
+      if (record.filePath) {
+        const exists = await window.api.app.fileExists(record.filePath);
+        if (exists) map[record.videoId] = record;
+      }
+    }
+    setLocalFiles(map);
+  }
 
   function handleDownloadItem(item: LocalPlaylistItem) {
     const request: DownloadRequest = {
@@ -275,12 +297,34 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
                 </ListItemAvatar>
                 <ListItemText
                   primary={item.title}
-                  secondary={`${item.channel}${item.duration ? ` · ${formatDuration(item.duration)}` : ''}`}
+                  secondary={
+                    <Box component="span" display="flex" gap={1} alignItems="center" flexWrap="wrap">
+                      <span>{item.channel}{item.duration ? ` · ${formatDuration(item.duration)}` : ''}</span>
+                      {localFiles[item.videoId] && (
+                        <Chip label="Downloaded" size="small" color="success" variant="outlined" sx={{ height: 16, fontSize: '0.6rem', '& .MuiChip-label': { px: 0.5 } }} />
+                      )}
+                      {localFiles[item.videoId]?.downloadedAt && (
+                        <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>
+                          DL: {new Date(localFiles[item.videoId].downloadedAt + 'Z').toLocaleDateString()}
+                        </span>
+                      )}
+                      {item.addedAt && (
+                        <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>
+                          Added: {new Date(item.addedAt + 'Z').toLocaleDateString()}
+                        </span>
+                      )}
+                    </Box>
+                  }
                   primaryTypographyProps={{ variant: 'body2', fontWeight: 500, noWrap: true }}
-                  secondaryTypographyProps={{ variant: 'caption' }}
+                  secondaryTypographyProps={{ variant: 'caption', component: 'div' }}
                 />
                 <ListItemSecondaryAction>
-                  <IconButton size="small" onClick={() => handlePlayItem(item)} title="Play">
+                  {localFiles[item.videoId] && (
+                    <IconButton size="small" onClick={() => setPlayingLocal(localFiles[item.videoId])} title="Play local file" color="success">
+                      <PlayCircleIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                  <IconButton size="small" onClick={() => handlePlayItem(item)} title="Preview on YouTube">
                     <PlayArrowIcon fontSize="small" />
                   </IconButton>
                   <IconButton size="small" onClick={() => handleDownloadItem(item)} title="Download">
@@ -305,6 +349,12 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
               url: `https://www.youtube.com/watch?v=${v.id}`, format: 'mp4', quality: 'best',
             });
           }}
+        />
+
+        <VideoPlayer
+          open={!!playingLocal}
+          record={playingLocal}
+          onClose={() => setPlayingLocal(null)}
         />
 
         {/* Edit Dialog */}
