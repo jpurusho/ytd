@@ -30,6 +30,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Download yt-dlp and ffmpeg binaries
+        run: npm run download-bins
+
       - name: Build application
         run: npm run build
         env:
