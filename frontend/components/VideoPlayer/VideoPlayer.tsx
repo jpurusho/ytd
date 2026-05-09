@@ -5,9 +5,9 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
-import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import type { DownloadRecord } from '@shared/types';
 
 interface Props {
@@ -41,8 +41,12 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
   const [videoUrl, setVideoUrl] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [sizeIndex, setSizeIndex] = useState(0);
   const [seeking, setSeeking] = useState(false);
+  const [position, setPosition] = useState({ x: 16, y: 16 });
+  const [size, setSize] = useState({ w: 420, h: 300 });
+  const dragging = useRef(false);
+  const resizing = useRef<string | null>(null);
+  const dragStart = useRef({ mx: 0, my: 0, x: 0, y: 0, w: 0, h: 0 });
 
   const isPlayable = record ? canPlayInline(record.format) : false;
   const isAudioOnly = record?.format === 'mp3';
@@ -79,11 +83,7 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
   function togglePlay() {
     const el = videoRef.current;
     if (!el) return;
-    if (playing) {
-      el.pause();
-    } else {
-      el.play();
-    }
+    if (playing) { el.pause(); } else { el.play(); }
     setPlaying(!playing);
   }
 
@@ -105,27 +105,14 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
 
   function handleSeekCommit(_: any, value: number | number[]) {
     const el = videoRef.current;
-    if (el) {
-      el.currentTime = value as number;
-    }
+    if (el) { el.currentTime = value as number; }
     setSeeking(false);
-  }
-
-  function handleVolumeChange(_: any, value: number | number[]) {
-    const vol = value as number;
-    setVolume(vol);
-    setMuted(vol === 0);
-    if (videoRef.current) videoRef.current.volume = vol;
   }
 
   function toggleMute() {
     const newMuted = !muted;
     setMuted(newMuted);
     if (videoRef.current) videoRef.current.muted = newMuted;
-  }
-
-  function handleFullscreen() {
-    videoRef.current?.requestFullscreen();
   }
 
   function openInSystem() {
@@ -136,17 +123,73 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
     if (record?.filePath) window.api.app.showInFinder(record.filePath);
   }
 
-  const sizes = [360, 500, 700];
-  const sizeLabels = ['S', 'M', 'L'];
-  const playerWidth = sizes[sizeIndex];
+  function handleDragStart(e: React.MouseEvent) {
+    e.preventDefault();
+    dragging.current = true;
+    dragStart.current = { mx: e.clientX, my: e.clientY, x: position.x, y: position.y, w: size.w, h: size.h };
+
+    function onMove(ev: MouseEvent) {
+      if (!dragging.current) return;
+      const dx = ev.clientX - dragStart.current.mx;
+      const dy = ev.clientY - dragStart.current.my;
+      setPosition({
+        x: Math.max(0, dragStart.current.x - dx),
+        y: Math.max(0, dragStart.current.y + dy),
+      });
+    }
+    function onUp() {
+      dragging.current = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  function handleResizeStart(e: React.MouseEvent, corner: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    resizing.current = corner;
+    dragStart.current = { mx: e.clientX, my: e.clientY, x: position.x, y: position.y, w: size.w, h: size.h };
+
+    function onMove(ev: MouseEvent) {
+      if (!resizing.current) return;
+      const dx = ev.clientX - dragStart.current.mx;
+      const dy = ev.clientY - dragStart.current.my;
+      const c = resizing.current;
+
+      let newW = dragStart.current.w;
+      let newH = dragStart.current.h;
+      let newX = dragStart.current.x;
+      let newY = dragStart.current.y;
+
+      if (c.includes('l')) { newW = Math.max(320, dragStart.current.w - dx); newX = dragStart.current.x + (dragStart.current.w - newW); }
+      if (c.includes('r')) { newW = Math.max(320, dragStart.current.w + dx); }
+      if (c.includes('b')) { newY = Math.max(0, dragStart.current.y - dy); newH = Math.max(200, dragStart.current.h + dy); }
+      if (c.includes('t')) { newH = Math.max(200, dragStart.current.h - dy); }
+
+      setSize({ w: Math.min(newW, 900), h: Math.min(newH, 700) });
+      setPosition({ x: Math.max(0, newX), y: Math.max(0, newY) });
+    }
+    function onUp() {
+      resizing.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  if (!open) return null;
 
   return (
     <Box
       sx={{
         position: 'fixed',
-        bottom: 16,
-        right: 16,
-        width: playerWidth,
+        bottom: position.y,
+        right: position.x,
+        width: size.w,
+        height: size.h,
         zIndex: 1300,
         borderRadius: 2,
         overflow: 'hidden',
@@ -154,28 +197,42 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
         border: '1px solid',
         borderColor: 'divider',
         bgcolor: 'background.paper',
-        display: open ? 'block' : 'none',
-        transition: 'width 0.2s ease',
-        resize: 'both',
-        minWidth: 300,
-        maxWidth: '80vw',
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
-      {/* Title Bar — draggable feel */}
-      <Box sx={{ px: 1.5, py: 1, display: 'flex', alignItems: 'center', gap: 1, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
+      {/* Resize corners */}
+      <Box onMouseDown={(e) => handleResizeStart(e, 'tl')} sx={{ position: 'absolute', width: 12, height: 12, top: 0, left: 0, cursor: 'nw-resize', zIndex: 3 }} />
+      <Box onMouseDown={(e) => handleResizeStart(e, 'tr')} sx={{ position: 'absolute', width: 12, height: 12, top: 0, right: 0, cursor: 'ne-resize', zIndex: 3 }} />
+      <Box onMouseDown={(e) => handleResizeStart(e, 'bl')} sx={{ position: 'absolute', width: 12, height: 12, bottom: 0, left: 0, cursor: 'sw-resize', zIndex: 3 }} />
+      <Box onMouseDown={(e) => handleResizeStart(e, 'br')} sx={{ position: 'absolute', width: 12, height: 12, bottom: 0, right: 0, cursor: 'se-resize', zIndex: 3 }} />
+
+      {/* Resize edges */}
+      <Box onMouseDown={(e) => handleResizeStart(e, 'l')} sx={{ position: 'absolute', top: 12, bottom: 12, left: 0, width: 5, cursor: 'ew-resize', zIndex: 2 }} />
+      <Box onMouseDown={(e) => handleResizeStart(e, 'r')} sx={{ position: 'absolute', top: 12, bottom: 12, right: 0, width: 5, cursor: 'ew-resize', zIndex: 2 }} />
+      <Box onMouseDown={(e) => handleResizeStart(e, 't')} sx={{ position: 'absolute', top: 0, left: 12, right: 12, height: 5, cursor: 'ns-resize', zIndex: 2 }} />
+      <Box onMouseDown={(e) => handleResizeStart(e, 'b')} sx={{ position: 'absolute', bottom: 0, left: 12, right: 12, height: 5, cursor: 'ns-resize', zIndex: 2 }} />
+
+      {/* Title bar — drag to move */}
+      <Box
+        onMouseDown={handleDragStart}
+        sx={{
+          px: 1.5, py: 0.75, display: 'flex', alignItems: 'center', gap: 0.5,
+          borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.default',
+          cursor: 'move', userSelect: 'none', flexShrink: 0,
+        }}
+      >
+        <DragIndicatorIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
         <Typography variant="caption" fontWeight={500} noWrap flex={1}>
           {record?.title || 'Player'}
         </Typography>
-        <IconButton size="small" onClick={() => setSizeIndex((sizeIndex + 1) % sizes.length)} title={`Size: ${sizeLabels[sizeIndex]} → ${sizeLabels[(sizeIndex + 1) % sizes.length]}`}>
-          <Typography variant="caption" sx={{ fontSize: 10, fontWeight: 700, lineHeight: 1 }}>{sizeLabels[sizeIndex]}</Typography>
-        </IconButton>
-        <IconButton size="small" onClick={openInSystem} title="Open in system player">
+        <IconButton size="small" onClick={(e) => { e.stopPropagation(); openInSystem(); }} title="System player">
           <OpenInNewIcon sx={{ fontSize: 16 }} />
         </IconButton>
-        <IconButton size="small" onClick={showInFinder} title="Show in Finder">
+        <IconButton size="small" onClick={(e) => { e.stopPropagation(); showInFinder(); }} title="Finder">
           <FolderOpenIcon sx={{ fontSize: 16 }} />
         </IconButton>
-        <IconButton size="small" onClick={onClose} title="Close">
+        <IconButton size="small" onClick={(e) => { e.stopPropagation(); onClose(); }} title="Close">
           <CloseIcon sx={{ fontSize: 16 }} />
         </IconButton>
       </Box>
@@ -193,9 +250,9 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
       {/* Video/Audio Content */}
       {videoUrl && !error && (
         <>
-          <Box sx={{ bgcolor: '#000', position: 'relative' }}>
+          <Box sx={{ flex: 1, bgcolor: '#000', position: 'relative', minHeight: 0 }}>
             {isAudioOnly ? (
-              <Box display="flex" alignItems="center" justifyContent="center" py={3} flexDirection="column" gap={1}>
+              <Box display="flex" alignItems="center" justifyContent="center" height="100%" flexDirection="column" gap={1}>
                 {record?.thumbnailUrl && (
                   <img src={record.thumbnailUrl} alt="" style={{ width: 120, height: 68, objectFit: 'cover', borderRadius: 4 }} />
                 )}
@@ -212,7 +269,7 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
               <video
                 ref={videoRef}
                 src={videoUrl}
-                style={{ width: '100%', display: 'block' }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={() => setPlaying(false)}
@@ -222,7 +279,7 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
           </Box>
 
           {/* Controls */}
-          <Box sx={{ px: 1.5, py: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ px: 1.5, py: 1, display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
             <IconButton size="small" onClick={togglePlay} sx={{ p: 0.5 }}>
               {playing ? <PauseIcon sx={{ fontSize: 18 }} /> : <PlayArrowIcon sx={{ fontSize: 18 }} />}
             </IconButton>
