@@ -37,14 +37,26 @@ interface Props {
   onDownload: (request: DownloadRequest) => void;
 }
 
+const SEARCH_RESULTS_KEY = 'ytd_search_results';
+
+function getCachedResults(): { query: string; results: VideoInfo[] } | null {
+  try {
+    const raw = localStorage.getItem(SEARCH_RESULTS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function cacheResults(query: string, results: VideoInfo[]): void {
+  localStorage.setItem(SEARCH_RESULTS_KEY, JSON.stringify({ query, results }));
+}
+
 export default function Search({ onDownload }: Props) {
-  const [query, setQuery] = useState(() => {
-    const history = getSearchHistory();
-    return history.length > 0 ? history[0] : '';
-  });
-  const [results, setResults] = useState<VideoInfo[]>([]);
+  const cached = getCachedResults();
+  const [query, setQuery] = useState(() => cached?.query || (getSearchHistory()[0] ?? ''));
+  const [results, setResults] = useState<VideoInfo[]>(cached?.results || []);
   const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [searched, setSearched] = useState(!!cached?.results?.length);
   const [selectedVideo, setSelectedVideo] = useState<VideoInfo | null>(null);
   const [previewVideo, setPreviewVideo] = useState<VideoInfo | null>(null);
   const [multiSelect, setMultiSelect] = useState(false);
@@ -109,6 +121,7 @@ export default function Search({ onDownload }: Props) {
     try {
       const videos = await window.api.youtube.search(trimmed, 20);
       setResults(videos);
+      cacheResults(trimmed, videos);
     } catch (err) {
       console.error('Search failed:', err);
       setResults([]);
@@ -154,7 +167,7 @@ export default function Search({ onDownload }: Props) {
             ),
             endAdornment: query ? (
               <InputAdornment position="end">
-                <IconButton size="small" onClick={() => { setQuery(''); setResults([]); setSearched(false); }} title="Clear search">
+                <IconButton size="small" onClick={() => { setQuery(''); setResults([]); setSearched(false); localStorage.removeItem(SEARCH_RESULTS_KEY); }} title="Clear search">
                   <ClearIcon sx={{ fontSize: 18 }} />
                 </IconButton>
               </InputAdornment>
