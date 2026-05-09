@@ -244,7 +244,7 @@ export default function Search({ onDownload }: Props) {
                     size="small"
                     sx={{ position: 'absolute', top: 4, left: 4, zIndex: 1, bgcolor: 'rgba(0,0,0,0.5)', borderRadius: 1, p: 0.25 }}
                   />
-                  <VideoCard video={video} onDownload={() => {}} />
+                  <VideoCard video={video} onDownload={() => {}} dragVideos={getSelectedVideoObjects()} />
                 </Box>
               ) : (
                 <VideoCard

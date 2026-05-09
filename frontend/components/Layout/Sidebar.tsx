@@ -81,15 +81,19 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
     if (!data) return;
 
     try {
-      const video: VideoInfo = JSON.parse(data);
-      const item: LocalPlaylistVideoItem = {
-        videoId: video.id,
-        title: video.title,
-        channel: video.channel,
-        thumbnailUrl: video.thumbnail,
-        duration: video.duration,
-      };
-      await window.api.playlists.addItem(playlistId, item);
+      const parsed = JSON.parse(data);
+      const videos: VideoInfo[] = Array.isArray(parsed) ? parsed : [parsed];
+
+      for (const video of videos) {
+        const item: LocalPlaylistVideoItem = {
+          videoId: video.id,
+          title: video.title,
+          channel: video.channel,
+          thumbnailUrl: video.thumbnail,
+          duration: video.duration,
+        };
+        await window.api.playlists.addItem(playlistId, item);
+      }
       loadPlaylists();
     } catch (err) {
       console.error('Failed to add video to playlist:', err);

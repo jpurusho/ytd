@@ -13,6 +13,7 @@ interface Props {
   onPreview?: (video: VideoInfo) => void;
   onAddToPlaylist?: (video: VideoInfo) => void;
   disabled?: boolean;
+  dragVideos?: VideoInfo[];
   draggable?: boolean;
 }
 
@@ -30,11 +31,12 @@ function formatViews(count: number): string {
   return `${count} views`;
 }
 
-export default function VideoCard({ video, onDownload, onPreview, onAddToPlaylist, disabled, draggable = true }: Props) {
+export default function VideoCard({ video, onDownload, onPreview, onAddToPlaylist, disabled, draggable = true, dragVideos }: Props) {
   const isPrivate = disabled || video.title === 'Private video' || video.title === 'Deleted video';
 
   function handleDragStart(e: React.DragEvent) {
-    e.dataTransfer.setData(VIDEO_DRAG_TYPE, JSON.stringify(video));
+    const data = dragVideos && dragVideos.length > 0 ? dragVideos : [video];
+    e.dataTransfer.setData(VIDEO_DRAG_TYPE, JSON.stringify(data));
     e.dataTransfer.effectAllowed = 'copy';
   }
 
