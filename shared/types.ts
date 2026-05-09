@@ -144,6 +144,7 @@ export interface LocalPlaylistItem {
   channel: string;
   thumbnailUrl: string;
   duration: number;
+  publishedAt: string;
   position: number;
   addedAt: string;
 }
@@ -154,6 +155,7 @@ export interface LocalPlaylistVideoItem {
   channel: string;
   thumbnailUrl: string;
   duration: number;
+  publishedAt?: string;
 }
 
 export interface DownloadRequest {

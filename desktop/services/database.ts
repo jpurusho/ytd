@@ -149,12 +149,20 @@ export function initDatabase(): void {
       channel TEXT,
       thumbnail_url TEXT,
       duration INTEGER DEFAULT 0,
+      published_at TEXT,
       position INTEGER NOT NULL DEFAULT 0,
       added_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (playlist_id) REFERENCES local_playlists(id) ON DELETE CASCADE,
       UNIQUE(playlist_id, video_id)
     );
   `);
+
+  // Migration: add published_at if missing
+  const playlistItemCols = db.pragma('table_info(local_playlist_items)') as any[];
+  const playlistItemColNames = new Set(playlistItemCols.map((c: any) => c.name));
+  if (!playlistItemColNames.has('published_at')) {
+    db.exec('ALTER TABLE local_playlist_items ADD COLUMN published_at TEXT');
+  }
 }
 
 export function getDb(): Database.Database {
@@ -339,6 +347,7 @@ export interface LocalPlaylistItemRow {
   channel: string;
   thumbnailUrl: string;
   duration: number;
+  publishedAt: string;
   position: number;
   addedAt: string;
 }
@@ -380,12 +389,12 @@ export function deleteLocalPlaylist(id: number): void {
   db.prepare('DELETE FROM local_playlists WHERE id = ?').run(id);
 }
 
-export function addPlaylistItem(playlistId: number, item: { videoId: string; title: string; channel: string; thumbnailUrl: string; duration: number }): LocalPlaylistItemRow {
+export function addPlaylistItem(playlistId: number, item: { videoId: string; title: string; channel: string; thumbnailUrl: string; duration: number; publishedAt?: string }): LocalPlaylistItemRow {
   const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) as max FROM local_playlist_items WHERE playlist_id = ?').get(playlistId) as any;
   const position = (maxPos.max ?? -1) + 1;
 
-  const stmt = db.prepare("INSERT OR IGNORE INTO local_playlist_items (playlist_id, video_id, title, channel, thumbnail_url, duration, position) VALUES (?, ?, ?, ?, ?, ?, ?)");
-  stmt.run(playlistId, item.videoId, item.title, item.channel, item.thumbnailUrl, item.duration, position);
+  const stmt = db.prepare("INSERT OR IGNORE INTO local_playlist_items (playlist_id, video_id, title, channel, thumbnail_url, duration, published_at, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+  stmt.run(playlistId, item.videoId, item.title, item.channel, item.thumbnailUrl, item.duration, item.publishedAt ?? null, position);
 
   db.prepare("UPDATE local_playlists SET updated_at = datetime('now') WHERE id = ?").run(playlistId);
 
@@ -441,6 +450,7 @@ function rowToPlaylistItem(row: any): LocalPlaylistItemRow {
     channel: row.channel || '',
     thumbnailUrl: row.thumbnail_url || '',
     duration: row.duration,
+    publishedAt: row.published_at || '',
     position: row.position,
     addedAt: row.added_at,
   };

@@ -63,6 +63,7 @@ export default function AddToPlaylistDialog({ open, videos, onClose }: Props) {
           channel: video.channel,
           thumbnailUrl: video.thumbnail,
           duration: video.duration,
+          publishedAt: video.publishedAt,
         });
       }
     }

@@ -308,6 +308,11 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
                           DL: {new Date(localFiles[item.videoId].downloadedAt + 'Z').toLocaleDateString()}
                         </span>
                       )}
+                      {item.publishedAt && (
+                        <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>
+                          Published: {new Date(item.publishedAt).toLocaleDateString()}
+                        </span>
+                      )}
                       {item.addedAt && (
                         <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>
                           Added: {new Date(item.addedAt + 'Z').toLocaleDateString()}

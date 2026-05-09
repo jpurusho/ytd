@@ -98,6 +98,7 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
           channel: video.channel,
           thumbnailUrl: video.thumbnail,
           duration: video.duration,
+          publishedAt: video.publishedAt,
         };
         await window.api.playlists.addItem(playlistId, item);
       }
