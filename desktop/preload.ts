@@ -29,6 +29,8 @@ const api: ElectronAPI = {
     getHistory: (limit?: number) => ipcRenderer.invoke('downloads:getHistory', limit),
     deleteHistory: (ids: number[]) => ipcRenderer.invoke('downloads:deleteHistory', ids),
     clearHistory: () => ipcRenderer.invoke('downloads:clearHistory'),
+    clearFailed: () => ipcRenderer.invoke('downloads:clearFailed'),
+    rescanFolder: (folderPath: string) => ipcRenderer.invoke('downloads:rescanFolder', folderPath),
     onProgress: (callback) => {
       const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
       ipcRenderer.on('download:progress', handler);

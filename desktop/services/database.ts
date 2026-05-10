@@ -317,6 +317,14 @@ export function clearDownloadHistory(): void {
   db.prepare('DELETE FROM downloads').run();
 }
 
+export function updateDownloadFilePath(id: number, filePath: string): void {
+  db.prepare('UPDATE downloads SET file_path = ? WHERE id = ?').run(filePath, id);
+}
+
+export function clearFailedQueue(): void {
+  db.prepare("DELETE FROM queue WHERE status IN ('failed', 'cancelled')").run();
+}
+
 export function getStats(): { totalDownloads: number; totalSize: number; thisWeek: number } {
   const total = db.prepare('SELECT COUNT(*) as count, COALESCE(SUM(file_size), 0) as size FROM downloads').get() as any;
   const week = db.prepare("SELECT COUNT(*) as count FROM downloads WHERE downloaded_at >= datetime('now', '-7 days')").get() as any;

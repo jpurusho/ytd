@@ -3,6 +3,7 @@ import { DownloadEngine } from './download-engine';
 import {
   addToQueue, getQueue, getQueueItem, updateQueueItem, deleteQueueItem,
   getPendingQueueItems, getActiveQueueItems, addDownloadRecord, getSetting,
+  clearFailedQueue,
 } from './database';
 import type { QueueItem, DownloadRequest, DownloadProgress, DownloadRecord } from '../../shared/types';
 
@@ -55,6 +56,11 @@ export class QueueManager {
     updateQueueItem(queueId, { status: 'cancelled' });
     this.sendQueueUpdate();
     this.processNext();
+  }
+
+  clearFailed(): void {
+    clearFailedQueue();
+    this.sendQueueUpdate();
   }
 
   retry(queueId: number): void {

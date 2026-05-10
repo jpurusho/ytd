@@ -149,6 +149,7 @@ export class DownloadEngine {
         }
         this.onComplete?.(item.id, outputFilePath, fileSize);
       } else {
+        console.error(`[download] yt-dlp exited with code ${code} for queue ${item.id}:\n${stderrBuffer}`);
         const errorMsg = this.classifyError(stderrBuffer);
         this.onError?.(item.id, errorMsg);
       }
@@ -209,12 +210,16 @@ export class DownloadEngine {
   }
 
   private buildCommand(item: QueueItem, outputDir: string): string[] {
+    const isSegment = !!(item.startTime || item.endTime);
+
     const args: string[] = [
       '--newline',
       '--no-colors',
       '--merge-output-format', item.format === 'mp3' ? 'mp4' : item.format,
-      '--continue',
-      '--no-overwrites',
+      // Segment downloads can't be resumed and need --force-overwrites so ffmpeg
+      // can overwrite any leftover intermediate files from a previous failed attempt.
+      // Full downloads use --continue + --no-overwrites to safely resume.
+      ...(isSegment ? ['--force-overwrites'] : ['--continue', '--no-overwrites']),
       '-o', path.join(outputDir, '%(title)s.%(ext)s'),
     ];
 
@@ -228,10 +233,13 @@ export class DownloadEngine {
     }
 
     // Time range segment extraction
-    if (item.startTime || item.endTime) {
+    if (isSegment) {
       const start = item.startTime || '0';
       const end = item.endTime || 'inf';
       args.push('--download-sections', `*${start}-${end}`);
+      // Required for live-stream replays: MPEG-TS container handles timestamp
+      // discontinuities that cause ffmpeg to fail when cutting HLS/DASH segments.
+      args.push('--hls-use-mpegts');
     }
 
     // Tell yt-dlp where ffmpeg is
@@ -253,6 +261,9 @@ export class DownloadEngine {
   private classifyError(stderr: string): string {
     for (const { pattern, message } of NON_DOWNLOADABLE_ERRORS) {
       if (pattern.test(stderr)) return message;
+    }
+    if (/ffmpeg exited with code/i.test(stderr)) {
+      return 'ffmpeg failed while processing the video. If downloading a segment, try a slightly different start/end time, or retry the download.';
     }
     // Return last meaningful line from stderr
     const lines = stderr.trim().split('\n').filter(l => l.trim());

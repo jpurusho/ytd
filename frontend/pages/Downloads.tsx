@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, Typography, Button } from '@mui/material';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import DownloadProgress from '../components/DownloadProgress/DownloadProgress';
 import type { QueueItem, DownloadProgress as ProgressType } from '@shared/types';
 
@@ -118,9 +119,20 @@ export default function Downloads() {
 
       {failed.length > 0 && (
         <Box mb={3}>
-          <Typography variant="subtitle2" color="error.main" sx={{ mb: 1 }}>
-            Failed ({failed.length})
-          </Typography>
+          <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+            <Typography variant="subtitle2" color="error.main">
+              Failed ({failed.length})
+            </Typography>
+            <Button
+              size="small"
+              color="error"
+              variant="outlined"
+              startIcon={<DeleteSweepIcon />}
+              onClick={async () => { await window.api.downloads.clearFailed(); loadQueue(); }}
+            >
+              Clear all failed
+            </Button>
+          </Box>
           <Box display="flex" flexDirection="column" gap={1}>
             {failed.map(item => (
               <DownloadProgress

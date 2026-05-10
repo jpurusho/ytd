@@ -4,6 +4,7 @@ import {
   InputLabel, Select, MenuItem, Divider, Alert, Chip,
   Switch, FormControlLabel,
 } from '@mui/material';
+import FolderSyncIcon from '@mui/icons-material/SyncAlt';
 import { useAppTheme } from '../theme/ThemeContext';
 
 export default function Settings() {
@@ -14,6 +15,8 @@ export default function Settings() {
   const [cookieBrowser, setCookieBrowser] = useState('chrome');
   const [toolStatus, setToolStatus] = useState<any>(null);
   const [saved, setSaved] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanResult, setRescanResult] = useState<{ updated: number; stillMissing: number } | null>(null);
   const [version, setVersion] = useState('');
   const [updateStatus, setUpdateStatus] = useState<{ status: string; version?: string; url?: string; message?: string } | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -75,9 +78,37 @@ export default function Settings() {
       {/* Output Directory */}
       <Paper sx={{ p: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', mb: 2 }} elevation={0}>
         <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Download Location</Typography>
-        <Box display="flex" gap={1}>
+        <Box display="flex" gap={1} mb={1.5}>
           <TextField value={outputDir} size="small" fullWidth disabled />
           <Button variant="outlined" onClick={handleSelectDir}>Browse</Button>
+        </Box>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+          If you moved downloaded files to a different folder, rescan to update the history so the Dashboard and History pages stop showing them as missing.
+        </Typography>
+        <Box display="flex" alignItems="center" gap={1.5}>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<FolderSyncIcon />}
+            disabled={rescanning}
+            onClick={async () => {
+              const folder = await window.api.app.selectDirectory();
+              if (!folder) return;
+              setRescanning(true);
+              setRescanResult(null);
+              const result = await window.api.downloads.rescanFolder(folder);
+              setRescanResult(result);
+              setRescanning(false);
+            }}
+          >
+            {rescanning ? 'Scanning...' : 'Rescan folder for moved files'}
+          </Button>
+          {rescanResult && (
+            <Typography variant="caption" color={rescanResult.updated > 0 ? 'success.main' : 'text.secondary'}>
+              {rescanResult.updated} record{rescanResult.updated !== 1 ? 's' : ''} updated
+              {rescanResult.stillMissing > 0 ? `, ${rescanResult.stillMissing} still missing` : ''}
+            </Typography>
+          )}
         </Box>
       </Paper>
 

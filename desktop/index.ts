@@ -118,8 +118,11 @@ function createWindow(): void {
     mainWindow?.webContents.send('app:fullscreenChange', false);
   });
 
-  // Remove "Electron/x.x.x" from the UA — YouTube blocks iframe embeds when it detects Electron
+  // Remove "Electron/x.x.x" from the UA — YouTube blocks iframe embeds when it detects Electron.
+  // Must be set on both webContents AND session: webContents covers the main frame,
+  // session covers cross-origin iframes (like the YouTube embed).
   const ua = mainWindow.webContents.getUserAgent().replace(/\s*Electron\/\S+/, '');
+  mainWindow.webContents.session.setUserAgent(ua);
   mainWindow.webContents.setUserAgent(ua);
 
   if (isDev) {

@@ -10,6 +10,7 @@ import type { SearchOptions } from '../shared/types';
 import {
   getDataDir, setDataDir, getSetting, setSetting,
   getDownloadHistory, deleteDownloadRecords, clearDownloadHistory, getStats,
+  updateDownloadFilePath,
   createLocalPlaylist, getLocalPlaylists, getLocalPlaylist, updateLocalPlaylist, deleteLocalPlaylist,
   addPlaylistItem, removePlaylistItem, getPlaylistItems, reorderPlaylistItem,
 } from './services/database';
@@ -130,6 +131,55 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('downloads:getStats', () => {
     return getStats();
+  });
+
+  ipcMain.handle('downloads:clearFailed', () => {
+    queueManager.clearFailed();
+  });
+
+  ipcMain.handle('downloads:rescanFolder', async (_event, folderPath: string) => {
+    const MEDIA_EXTS = new Set(['.mp4', '.webm', '.mkv', '.mp3', '.m4a', '.ogg', '.wav', '.mov', '.avi']);
+
+    // Collect all media files in the folder (one level deep)
+    const files: string[] = [];
+    try {
+      for (const entry of fs.readdirSync(folderPath)) {
+        if (MEDIA_EXTS.has(path.extname(entry).toLowerCase())) {
+          files.push(path.join(folderPath, entry));
+        }
+      }
+    } catch {
+      return { updated: 0, stillMissing: 0, error: 'Could not read folder' };
+    }
+
+    // Normalise a string the same way yt-dlp does: collapse special chars to spaces/underscores
+    function normalise(s: string): string {
+      return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    const history = getDownloadHistory(100000);
+    let updated = 0;
+    let stillMissing = 0;
+
+    for (const record of history) {
+      if (record.filePath && fs.existsSync(record.filePath)) continue; // already fine
+
+      // Try to find a file whose basename matches the record title
+      const titleNorm = normalise(record.title);
+      const match = files.find((f) => {
+        const base = normalise(path.basename(f, path.extname(f)));
+        return base === titleNorm || base.startsWith(titleNorm.slice(0, 30));
+      });
+
+      if (match) {
+        updateDownloadFilePath(record.id, match);
+        updated++;
+      } else {
+        stillMissing++;
+      }
+    }
+
+    return { updated, stillMissing };
   });
 
   // ─── App ────────────────────────────────────────────────────────────────────

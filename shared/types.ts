@@ -205,6 +205,8 @@ export interface ElectronAPI {
     getHistory: (limit?: number) => Promise<DownloadRecord[]>;
     deleteHistory: (ids: number[]) => Promise<void>;
     clearHistory: () => Promise<void>;
+    clearFailed: () => Promise<void>;
+    rescanFolder: (folderPath: string) => Promise<{ updated: number; stillMissing: number; error?: string }>;
     onProgress: (callback: (progress: DownloadProgress) => void) => () => void;
     onComplete: (callback: (record: DownloadRecord) => void) => () => void;
     onError: (callback: (data: { queueId: number; error: string }) => void) => () => void;
