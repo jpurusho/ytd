@@ -17,6 +17,9 @@ export default function Settings() {
   const [version, setVersion] = useState('');
   const [updateStatus, setUpdateStatus] = useState<{ status: string; version?: string; url?: string; message?: string } | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadPercent, setDownloadPercent] = useState(0);
+  const [downloadedPath, setDownloadedPath] = useState('');
 
   useEffect(() => {
     loadSettings();
@@ -210,19 +213,55 @@ export default function Settings() {
           {updateStatus?.status === 'up-to-date' && (
             <Chip label="Up to date" size="small" color="success" sx={{ height: 22, fontSize: '0.75rem' }} />
           )}
-          {updateStatus?.status === 'available' && (
+          {updateStatus?.status === 'available' && !downloading && !downloadedPath && (
             <Chip
-              label={`v${updateStatus.version} available`}
+              label={`v${updateStatus.version} — download`}
               size="small"
               color="info"
-              onClick={() => window.api.app.openExternal(updateStatus.url!)}
+              onClick={async () => {
+                if (!updateStatus.url) return;
+                setDownloading(true);
+                setDownloadPercent(0);
+                const unsub = window.api.app.onDownloadProgress((data) => setDownloadPercent(data.percent));
+                try {
+                  const result = await window.api.app.downloadUpdate(updateStatus.url);
+                  setDownloadedPath(result.path);
+                } catch {}
+                setDownloading(false);
+                unsub();
+              }}
               sx={{ height: 22, fontSize: '0.75rem', cursor: 'pointer' }}
             />
+          )}
+          {downloading && (
+            <Chip label={`Downloading... ${downloadPercent}%`} size="small" color="info" variant="outlined" sx={{ height: 22, fontSize: '0.75rem' }} />
           )}
           {updateStatus?.status === 'error' && (
             <Chip label={updateStatus.message} size="small" color="warning" variant="outlined" sx={{ height: 22, fontSize: '0.7rem' }} />
           )}
         </Box>
+        {downloadedPath && (
+          <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
+            <Typography variant="caption" color="success.main" fontWeight={500}>
+              Downloaded! To install:
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, lineHeight: 1.6 }}>
+              1. Quit ytd<br/>
+              2. Extract the .zip in Downloads<br/>
+              3. Replace ytd.app in /Applications<br/>
+              4. Run: xattr -rc /Applications/ytd.app<br/>
+              5. Open ytd
+            </Typography>
+            <Typography
+              variant="caption"
+              color="primary"
+              sx={{ cursor: 'pointer', display: 'block', mt: 0.5 }}
+              onClick={() => window.api.app.showInFinder(downloadedPath)}
+            >
+              Show in Finder
+            </Typography>
+          </Box>
+        )}
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
           Electron + React + TypeScript + SQLite
         </Typography>
