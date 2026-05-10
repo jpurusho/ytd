@@ -1,8 +1,10 @@
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync } from 'child_process';
+import { execSync, exec } from 'child_process';
+import { promisify } from 'util';
 
+const execAsync = promisify(exec);
 const isDev = !app.isPackaged;
 
 function findInPath(binary: string): string | null {
@@ -13,20 +15,21 @@ function findInPath(binary: string): string | null {
   return null;
 }
 
+const platformBinDir = process.platform === 'darwin' ? 'mac' : 'linux';
+
 export function getYtDlpPath(): string {
   if (!isDev) {
     const bundled = path.join(process.resourcesPath, 'bin', 'yt-dlp');
     if (fs.existsSync(bundled)) return bundled;
   }
 
+  const devBundled = path.join(app.getAppPath(), 'bin', platformBinDir, 'yt-dlp');
+  if (fs.existsSync(devBundled)) return devBundled;
+
   const systemPath = findInPath('yt-dlp');
   if (systemPath) return systemPath;
 
-  const commonPaths = [
-    '/opt/homebrew/bin/yt-dlp',
-    '/usr/local/bin/yt-dlp',
-  ];
-  for (const p of commonPaths) {
+  for (const p of ['/opt/homebrew/bin/yt-dlp', '/usr/local/bin/yt-dlp']) {
     if (fs.existsSync(p)) return p;
   }
 
@@ -39,39 +42,38 @@ export function getFfmpegPath(): string {
     if (fs.existsSync(bundled)) return bundled;
   }
 
+  const devBundled = path.join(app.getAppPath(), 'bin', platformBinDir, 'ffmpeg');
+  if (fs.existsSync(devBundled)) return devBundled;
+
   const systemPath = findInPath('ffmpeg');
   if (systemPath) return systemPath;
 
-  const commonPaths = [
-    '/opt/homebrew/bin/ffmpeg',
-    '/usr/local/bin/ffmpeg',
-  ];
-  for (const p of commonPaths) {
+  for (const p of ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg']) {
     if (fs.existsSync(p)) return p;
   }
 
   return 'ffmpeg';
 }
 
-export function checkToolsInstalled(): { ytDlp: { installed: boolean; path: string; version?: string }; ffmpeg: { installed: boolean; path: string; version?: string } } {
+type ToolStatus = { installed: boolean; path: string; version?: string };
+type ToolsResult = { ytDlp: ToolStatus; ffmpeg: ToolStatus };
+
+let toolsCache: ToolsResult | null = null;
+
+export async function checkToolsInstalled(): Promise<ToolsResult> {
+  if (toolsCache) return toolsCache;
+
   const ytDlpPath = getYtDlpPath();
   const ffmpegPath = getFfmpegPath();
 
-  let ytDlpVersion: string | undefined;
-  let ffmpegVersion: string | undefined;
+  const [ytDlpVersion, ffmpegVersion] = await Promise.all([
+    execAsync(`"${ytDlpPath}" --version`).then(({ stdout }) => stdout.trim()).catch(() => undefined),
+    execAsync(`"${ffmpegPath}" -version`).then(({ stdout }) => stdout.match(/ffmpeg version (\S+)/)?.[1]).catch(() => undefined),
+  ]);
 
-  try {
-    ytDlpVersion = execSync(`"${ytDlpPath}" --version`, { encoding: 'utf-8' }).trim();
-  } catch {}
-
-  try {
-    const output = execSync(`"${ffmpegPath}" -version`, { encoding: 'utf-8' });
-    const match = output.match(/ffmpeg version (\S+)/);
-    ffmpegVersion = match?.[1];
-  } catch {}
-
-  return {
+  toolsCache = {
     ytDlp: { installed: !!ytDlpVersion, path: ytDlpPath, version: ytDlpVersion },
     ffmpeg: { installed: !!ffmpegVersion, path: ffmpegPath, version: ffmpegVersion },
   };
+  return toolsCache;
 }

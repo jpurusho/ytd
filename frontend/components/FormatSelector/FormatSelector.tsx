@@ -31,6 +31,8 @@ const QUALITY_OPTIONS = [
 
 function classifyFormatError(raw: string): string {
   const lower = raw.toLowerCase();
+  if (lower.includes('enoent') || lower.includes('spawn') || lower.includes('failed to run yt-dlp'))
+    return 'yt-dlp is not installed or could not be found. Check Settings → External Tools.';
   if (lower.includes('private video') || lower.includes('private'))
     return 'This is a private video and cannot be downloaded.';
   if (lower.includes('sign in') || lower.includes('age'))

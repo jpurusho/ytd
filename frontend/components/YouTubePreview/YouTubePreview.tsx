@@ -157,7 +157,7 @@ export default function YouTubePreview({ video, onClose, onDownload }: Props) {
       {/* YouTube embed */}
       <Box sx={{ flex: 1, position: 'relative', bgcolor: '#000' }}>
         <iframe
-          src={`https://www.youtube-nocookie.com/embed/${video.id}?autoplay=1&rel=0&origin=http://localhost`}
+          src={`https://www.youtube-nocookie.com/embed/${video.id}?autoplay=1&rel=0&origin=${encodeURIComponent(window.location.origin)}`}
           style={{
             position: 'absolute',
             top: 0,
@@ -166,7 +166,8 @@ export default function YouTubePreview({ video, onClose, onDownload }: Props) {
             height: '100%',
             border: 'none',
           }}
-          allow="autoplay; encrypted-media"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          referrerPolicy="strict-origin-when-cross-origin"
           allowFullScreen
         />
         {/* Fallback for embed-restricted videos */}

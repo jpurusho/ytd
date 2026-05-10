@@ -118,6 +118,10 @@ function createWindow(): void {
     mainWindow?.webContents.send('app:fullscreenChange', false);
   });
 
+  // Remove "Electron/x.x.x" from the UA — YouTube blocks iframe embeds when it detects Electron
+  const ua = mainWindow.webContents.getUserAgent().replace(/\s*Electron\/\S+/, '');
+  mainWindow.webContents.setUserAgent(ua);
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
