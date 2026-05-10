@@ -29,10 +29,9 @@ mac:
   icon: resources/icon.icns
   target:
     - target: zip
-      arch: [universal]
+      arch: [arm64]
   darkModeSupport: true
   identity: null
-  x64ArchFiles: "Contents/Resources/bin/*"
 
 win:
   target:

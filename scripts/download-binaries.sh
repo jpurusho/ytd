@@ -18,6 +18,7 @@ fi
 mkdir -p "$BIN_DIR"
 
 # ─── yt-dlp ─────────────────────────────────────────────────────────────────
+# yt-dlp_macos is a universal binary (works on both x64 and arm64)
 
 echo "Downloading yt-dlp..."
 if [ "$PLATFORM" = "darwin" ]; then
@@ -29,26 +30,33 @@ chmod +x "$BIN_DIR/yt-dlp"
 echo "  yt-dlp: $("$BIN_DIR/yt-dlp" --version)"
 
 # ─── ffmpeg ──────────────────────────────────────────────────────────────────
+# For macOS: download arm64 build for Apple Silicon (works natively)
+# The CI runner is x64 but we target arm64 for the universal app
 
 echo "Downloading ffmpeg..."
 if [ "$PLATFORM" = "darwin" ]; then
-  # Try evermeet.cx first, fallback to GitHub mirror
-  if curl -L --fail "https://evermeet.cx/ffmpeg/getrelease/zip" -o /tmp/ffmpeg.zip 2>/dev/null; then
+  # Use osxexperts.net arm64 builds (Apple Silicon native)
+  FFMPEG_URL="https://www.osxexperts.net/ffmpeg7arm.zip"
+  FFPROBE_URL="https://www.osxexperts.net/ffprobe7arm.zip"
+
+  # Try arm64 builds first
+  if curl -L --fail "$FFMPEG_URL" -o /tmp/ffmpeg.zip 2>/dev/null; then
+    unzip -o /tmp/ffmpeg.zip -d "$BIN_DIR/"
+    rm /tmp/ffmpeg.zip
+  elif curl -L --fail "https://evermeet.cx/ffmpeg/getrelease/zip" -o /tmp/ffmpeg.zip 2>/dev/null; then
     unzip -o /tmp/ffmpeg.zip -d "$BIN_DIR/"
     rm /tmp/ffmpeg.zip
   else
-    echo "  evermeet.cx unavailable, trying GitHub mirror..."
-    curl -L --fail "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-x64.gz" -o /tmp/ffmpeg.gz
-    gunzip -f /tmp/ffmpeg.gz
-    mv /tmp/ffmpeg "$BIN_DIR/ffmpeg"
+    echo "ERROR: Could not download ffmpeg"
+    exit 1
   fi
 
-  # ffprobe
-  if curl -L --fail "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip" -o /tmp/ffprobe.zip 2>/dev/null; then
+  if curl -L --fail "$FFPROBE_URL" -o /tmp/ffprobe.zip 2>/dev/null; then
     unzip -o /tmp/ffprobe.zip -d "$BIN_DIR/"
     rm /tmp/ffprobe.zip
-  else
-    echo "  ffprobe: skipped (not critical)"
+  elif curl -L --fail "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip" -o /tmp/ffprobe.zip 2>/dev/null; then
+    unzip -o /tmp/ffprobe.zip -d "$BIN_DIR/"
+    rm /tmp/ffprobe.zip
   fi
 
 elif [ "$PLATFORM" = "linux" ]; then
@@ -65,7 +73,9 @@ fi
 
 chmod +x "$BIN_DIR/ffmpeg" 2>/dev/null || true
 chmod +x "$BIN_DIR/ffprobe" 2>/dev/null || true
+
 echo "  ffmpeg: $("$BIN_DIR/ffmpeg" -version 2>&1 | head -1 || echo 'installed')"
+echo "  arch: $(file "$BIN_DIR/ffmpeg" 2>/dev/null | grep -o 'arm64\|x86_64' || echo 'unknown')"
 
 echo ""
 echo "=== Done! Binaries saved to $BIN_DIR ==="
