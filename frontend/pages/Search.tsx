@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Box, TextField, InputAdornment, Grid, Typography, CircularProgress, Button, Checkbox, Paper, List, ListItemButton, ListItemText, IconButton } from '@mui/material';
+import { Box, TextField, InputAdornment, Grid, Typography, CircularProgress, Button, Checkbox, Paper, List, ListItemButton, ListItemText, IconButton, ToggleButtonGroup, ToggleButton } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
@@ -8,7 +8,23 @@ import VideoCard from '../components/VideoCard/VideoCard';
 import FormatSelector from '../components/FormatSelector/FormatSelector';
 import YouTubePreview from '../components/YouTubePreview/YouTubePreview';
 import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
-import type { VideoInfo, DownloadRequest } from '@shared/types';
+import type { VideoInfo, DownloadRequest, SearchOptions } from '@shared/types';
+
+type SortOrder = 'relevance' | 'date' | 'viewCount' | 'rating' | 'title';
+type DurationFilter = '' | 'short' | 'medium' | 'long';
+type DateFilter = '' | 'today' | 'week' | 'month' | 'year';
+
+function getPublishedAfter(dateFilter: DateFilter): string | undefined {
+  if (!dateFilter) return undefined;
+  const d = new Date();
+  if (dateFilter === 'today') { d.setHours(0, 0, 0, 0); }
+  else if (dateFilter === 'week') { d.setDate(d.getDate() - 7); }
+  else if (dateFilter === 'month') { d.setDate(d.getDate() - 30); }
+  else if (dateFilter === 'year') { d.setFullYear(d.getFullYear() - 1); }
+  return d.toISOString();
+}
+
+const tbSx = { px: 1.5, py: 0.25, fontSize: '0.72rem', textTransform: 'none' as const, minWidth: 0, lineHeight: 1.5 };
 
 const SEARCH_HISTORY_KEY = 'ytd_search_history';
 const MAX_HISTORY = 20;
@@ -39,7 +55,15 @@ interface Props {
 
 const SEARCH_RESULTS_KEY = 'ytd_search_results';
 
-function getCachedResults(): { query: string; results: VideoInfo[] } | null {
+interface CachedSearch {
+  query: string;
+  sortOrder: SortOrder;
+  durationFilter: DurationFilter;
+  dateFilter: DateFilter;
+  results: VideoInfo[];
+}
+
+function getCachedResults(): CachedSearch | null {
   try {
     const raw = localStorage.getItem(SEARCH_RESULTS_KEY);
     if (!raw) return null;
@@ -47,8 +71,8 @@ function getCachedResults(): { query: string; results: VideoInfo[] } | null {
   } catch { return null; }
 }
 
-function cacheResults(query: string, results: VideoInfo[]): void {
-  localStorage.setItem(SEARCH_RESULTS_KEY, JSON.stringify({ query, results }));
+function cacheResults(query: string, sortOrder: SortOrder, durationFilter: DurationFilter, dateFilter: DateFilter, results: VideoInfo[]): void {
+  localStorage.setItem(SEARCH_RESULTS_KEY, JSON.stringify({ query, sortOrder, durationFilter, dateFilter, results }));
 }
 
 export default function Search({ onDownload }: Props) {
@@ -57,6 +81,9 @@ export default function Search({ onDownload }: Props) {
   const [results, setResults] = useState<VideoInfo[]>(cached?.results || []);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(!!cached?.results?.length);
+  const [sortOrder, setSortOrder] = useState<SortOrder>(cached?.sortOrder ?? 'relevance');
+  const [durationFilter, setDurationFilter] = useState<DurationFilter>(cached?.durationFilter ?? '');
+  const [dateFilter, setDateFilter] = useState<DateFilter>(cached?.dateFilter ?? '');
   const [selectedVideo, setSelectedVideo] = useState<VideoInfo | null>(null);
   const [previewVideo, setPreviewVideo] = useState<VideoInfo | null>(null);
   const [multiSelect, setMultiSelect] = useState(false);
@@ -108,27 +135,36 @@ export default function Search({ onDownload }: Props) {
     setShowSuggestions(false);
   }
 
-  const handleSearch = useCallback(async () => {
+  const handleSearch = useCallback(async (overrides: { order?: SortOrder; duration?: DurationFilter; date?: DateFilter } = {}) => {
     const trimmed = query.trim();
     if (!trimmed) return;
 
+    const effectiveSort = overrides.order ?? sortOrder;
+    const effectiveDuration = overrides.duration !== undefined ? overrides.duration : durationFilter;
+    const effectiveDate = overrides.date !== undefined ? overrides.date : dateFilter;
+
+    const options: SearchOptions = { order: effectiveSort };
+    if (effectiveDuration) options.videoDuration = effectiveDuration;
+    const publishedAfter = getPublishedAfter(effectiveDate);
+    if (publishedAfter) options.publishedAfter = publishedAfter;
+
     setShowSuggestions(false);
-    saveSearchHistory(trimmed);
+    if (!Object.keys(overrides).length) saveSearchHistory(trimmed);
 
     setLoading(true);
     setSearched(true);
     setSelectedVideos(new Set());
     try {
-      const videos = await window.api.youtube.search(trimmed, 20);
+      const videos = await window.api.youtube.search(trimmed, 20, options);
       setResults(videos);
-      cacheResults(trimmed, videos);
+      cacheResults(trimmed, effectiveSort, effectiveDuration, effectiveDate, videos);
     } catch (err) {
       console.error('Search failed:', err);
       setResults([]);
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, sortOrder, durationFilter, dateFilter]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') handleSearch();
@@ -167,7 +203,7 @@ export default function Search({ onDownload }: Props) {
             ),
             endAdornment: query ? (
               <InputAdornment position="end">
-                <IconButton size="small" onClick={() => { setQuery(''); setResults([]); setSearched(false); localStorage.removeItem(SEARCH_RESULTS_KEY); }} title="Clear search">
+                <IconButton size="small" onClick={() => { setQuery(''); setResults([]); setSearched(false); setSortOrder('relevance'); setDurationFilter(''); setDateFilter(''); localStorage.removeItem(SEARCH_RESULTS_KEY); }} title="Clear search">
                   <ClearIcon sx={{ fontSize: 18 }} />
                 </IconButton>
               </InputAdornment>
@@ -206,6 +242,66 @@ export default function Search({ onDownload }: Props) {
             </List>
           </Paper>
         )}
+      </Box>
+
+      {/* Filter / sort bar */}
+      <Box display="flex" alignItems="center" gap={2} mb={2} flexWrap="wrap">
+        <Box display="flex" alignItems="center" gap={1}>
+          <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>Sort</Typography>
+          <ToggleButtonGroup
+            value={sortOrder}
+            exclusive
+            size="small"
+            onChange={(_: React.MouseEvent, v: SortOrder | null) => {
+              if (!v) return;
+              setSortOrder(v);
+              if (searched && query.trim()) handleSearch({ order: v });
+            }}
+          >
+            <ToggleButton value="relevance" sx={tbSx}>Relevance</ToggleButton>
+            <ToggleButton value="date" sx={tbSx}>Date</ToggleButton>
+            <ToggleButton value="viewCount" sx={tbSx}>Views</ToggleButton>
+            <ToggleButton value="rating" sx={tbSx}>Rating</ToggleButton>
+            <ToggleButton value="title" sx={tbSx}>Title</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+        <Box display="flex" alignItems="center" gap={1}>
+          <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>Duration</Typography>
+          <ToggleButtonGroup
+            value={durationFilter}
+            exclusive
+            size="small"
+            onChange={(_: React.MouseEvent, v: DurationFilter | null) => {
+              const val = v ?? '';
+              setDurationFilter(val);
+              if (searched && query.trim()) handleSearch({ duration: val });
+            }}
+          >
+            <ToggleButton value="" sx={tbSx}>Any</ToggleButton>
+            <ToggleButton value="short" sx={tbSx}>Short &lt;4m</ToggleButton>
+            <ToggleButton value="medium" sx={tbSx}>Medium</ToggleButton>
+            <ToggleButton value="long" sx={tbSx}>Long &gt;20m</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+        <Box display="flex" alignItems="center" gap={1}>
+          <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>Upload date</Typography>
+          <ToggleButtonGroup
+            value={dateFilter}
+            exclusive
+            size="small"
+            onChange={(_: React.MouseEvent, v: DateFilter | null) => {
+              const val = v ?? '';
+              setDateFilter(val);
+              if (searched && query.trim()) handleSearch({ date: val });
+            }}
+          >
+            <ToggleButton value="" sx={tbSx}>Any</ToggleButton>
+            <ToggleButton value="today" sx={tbSx}>Today</ToggleButton>
+            <ToggleButton value="week" sx={tbSx}>This week</ToggleButton>
+            <ToggleButton value="month" sx={tbSx}>This month</ToggleButton>
+            <ToggleButton value="year" sx={tbSx}>This year</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
       </Box>
 
       {/* Multi-select toolbar */}

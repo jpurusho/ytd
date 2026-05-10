@@ -1,6 +1,6 @@
 import { google, youtube_v3 } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
-import type { VideoInfo, PlaylistInfo, PlaylistItem, SubscriptionInfo } from '../../shared/types';
+import type { VideoInfo, PlaylistInfo, PlaylistItem, SubscriptionInfo, SearchOptions } from '../../shared/types';
 
 export class YouTubeApiService {
   private youtube: youtube_v3.Youtube;
@@ -9,14 +9,18 @@ export class YouTubeApiService {
     this.youtube = google.youtube({ version: 'v3', auth });
   }
 
-  async search(query: string, maxResults: number = 20): Promise<VideoInfo[]> {
-    const response = await this.youtube.search.list({
+  async search(query: string, maxResults: number = 20, options: SearchOptions = {}): Promise<VideoInfo[]> {
+    const params: youtube_v3.Params$Resource$Search$List = {
       part: ['snippet'],
       q: query,
       type: ['video'],
       maxResults,
-      order: 'relevance',
-    });
+      order: options.order || 'relevance',
+    };
+    if (options.videoDuration) params.videoDuration = options.videoDuration;
+    if (options.publishedAfter) params.publishedAfter = options.publishedAfter;
+
+    const response = await this.youtube.search.list(params);
 
     const videoIds = (response.data.items || [])
       .map(item => item.id?.videoId)

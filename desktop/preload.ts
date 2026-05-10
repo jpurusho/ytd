@@ -11,7 +11,7 @@ const api: ElectronAPI = {
     isLoggedIn: () => ipcRenderer.invoke('auth:isLoggedIn'),
   },
   youtube: {
-    search: (query: string, maxResults?: number) => ipcRenderer.invoke('youtube:search', query, maxResults),
+    search: (query: string, maxResults?: number, options?: import('../shared/types').SearchOptions) => ipcRenderer.invoke('youtube:search', query, maxResults, options),
     getPlaylists: () => ipcRenderer.invoke('youtube:getPlaylists'),
     getPlaylistItems: (playlistId: string, maxResults?: number) => ipcRenderer.invoke('youtube:getPlaylistItems', playlistId, maxResults),
     getSubscriptions: (maxResults?: number) => ipcRenderer.invoke('youtube:getSubscriptions', maxResults),

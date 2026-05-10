@@ -6,6 +6,7 @@ import { YouTubeApiService } from './services/youtube-api';
 import { QueueManager } from './services/queue-manager';
 import { getAvailableFormats } from './services/download-engine';
 import { checkToolsInstalled } from './services/tool-paths';
+import type { SearchOptions } from '../shared/types';
 import {
   getDataDir, setDataDir, getSetting, setSetting,
   getDownloadHistory, deleteDownloadRecords, clearDownloadHistory, getStats,
@@ -61,8 +62,8 @@ export function registerIpcHandlers(): void {
 
   // ─── YouTube API ────────────────────────────────────────────────────────────
 
-  ipcMain.handle('youtube:search', async (_event, query: string, maxResults?: number) => {
-    return getYouTubeService().search(query, maxResults);
+  ipcMain.handle('youtube:search', async (_event, query: string, maxResults?: number, options?: SearchOptions) => {
+    return getYouTubeService().search(query, maxResults, options);
   });
 
   ipcMain.handle('youtube:getPlaylists', async () => {

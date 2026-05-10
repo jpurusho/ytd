@@ -12,6 +12,12 @@ export interface UserInfo {
   picture: string;
 }
 
+export interface SearchOptions {
+  order?: 'relevance' | 'date' | 'viewCount' | 'rating' | 'title';
+  videoDuration?: 'short' | 'medium' | 'long';
+  publishedAfter?: string;
+}
+
 export interface VideoInfo {
   id: string;
   title: string;
@@ -181,7 +187,7 @@ export interface ElectronAPI {
     isLoggedIn: () => Promise<boolean>;
   };
   youtube: {
-    search: (query: string, maxResults?: number) => Promise<VideoInfo[]>;
+    search: (query: string, maxResults?: number, options?: SearchOptions) => Promise<VideoInfo[]>;
     getPlaylists: () => Promise<PlaylistInfo[]>;
     getPlaylistItems: (playlistId: string, maxResults?: number) => Promise<PlaylistItem[]>;
     getSubscriptions: (maxResults?: number) => Promise<SubscriptionInfo[]>;
