@@ -57,6 +57,8 @@ export class DownloadEngine {
     const args = this.buildCommand(item, outputDir);
     const ytDlpPath = getYtDlpPath();
 
+    console.log(`[download] Command: ${ytDlpPath} ${args.join(' ')}`);
+
     const proc = spawn(ytDlpPath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: true,
@@ -315,10 +317,7 @@ export class DownloadEngine {
       const start = item.startTime || '0';
       const end = item.endTime || 'inf';
       args.push('--download-sections', `*${start}-${end}`);
-      // Required for live-stream replays: MPEG-TS container handles timestamp
-      // discontinuities that cause ffmpeg to fail when cutting HLS/DASH segments.
-      args.push('--hls-use-mpegts');
-      // Pass -y to ffmpeg so it overwrites output without prompting
+      // Pass -y to ffmpeg so it overwrites without prompting
       args.push('--postprocessor-args', 'ffmpeg:-y');
     }
 
