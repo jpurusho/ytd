@@ -1,6 +1,7 @@
-import { app, BrowserWindow, nativeTheme, Menu, protocol, net, session } from 'electron';
+import { app, BrowserWindow, nativeTheme, Menu, protocol, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as http from 'http';
 import { config } from 'dotenv';
 import { registerIpcHandlers } from './ipc-handlers';
 import { initDatabase } from './services/database';
@@ -11,6 +12,8 @@ app.setName('ytd');
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
+let prodServer: http.Server | null = null;
+let prodServerPort = 0;
 
 function createWindow(): void {
   nativeTheme.themeSource = 'dark';
@@ -149,10 +152,10 @@ function createWindow(): void {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    // CRITICAL: Load via custom protocol with HTTP-like origin instead of file://
-    // YouTube embeds reject file:// origins (Error 152). By serving through our
-    // custom protocol with a proper scheme, the iframe gets a valid origin.
-    mainWindow.loadURL('app://ytd/index.html');
+    // Serve production build via local HTTP server — YouTube embeds require
+    // http:// or https:// parent origin. Custom protocols (app://, file://)
+    // are rejected with Error 152.
+    mainWindow.loadURL(`http://localhost:${prodServerPort}/index.html`);
   }
 
   mainWindow.on('closed', () => {
@@ -163,22 +166,53 @@ function createWindow(): void {
 // Register custom protocols before app is ready
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-media', privileges: { stream: true, bypassCSP: true, supportFetchAPI: true } },
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
 
-app.whenReady().then(() => {
-  // Serve the renderer (production build) via app:// protocol.
-  // This gives iframes a proper HTTP-like origin instead of file://,
-  // which is required for YouTube embeds to work (Error 152 fix).
-  protocol.handle('app', (request) => {
-    const url = new URL(request.url);
-    let filePath = path.join(__dirname, '../renderer', url.pathname);
-    // Default to index.html for root
-    if (url.pathname === '/' || url.pathname === '/index.html') {
-      filePath = path.join(__dirname, '../renderer/index.html');
-    }
-    return net.fetch(`file://${filePath}`);
+function startProductionServer(): Promise<number> {
+  return new Promise((resolve) => {
+    const rendererDir = path.join(__dirname, '../renderer');
+    const mimeTypes: Record<string, string> = {
+      '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
+      '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
+      '.svg': 'image/svg+xml', '.woff': 'font/woff', '.woff2': 'font/woff2',
+      '.ico': 'image/x-icon',
+    };
+    prodServer = http.createServer((req, res) => {
+      let pathname = req.url?.split('?')[0] || '/';
+      if (pathname === '/') pathname = '/index.html';
+      const filePath = path.join(rendererDir, pathname);
+      // Prevent directory traversal
+      if (!filePath.startsWith(rendererDir)) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
+      if (!fs.existsSync(filePath)) {
+        // SPA fallback — serve index.html for client-side routes
+        const indexPath = path.join(rendererDir, 'index.html');
+        const content = fs.readFileSync(indexPath);
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(content);
+        return;
+      }
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+      const content = fs.readFileSync(filePath);
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(content);
+    });
+    // Listen on random available port on localhost only
+    prodServer.listen(0, '127.0.0.1', () => {
+      const addr = prodServer!.address() as { port: number };
+      resolve(addr.port);
+    });
   });
+}
+
+app.whenReady().then(async () => {
+  if (!isDev) {
+    prodServerPort = await startProductionServer();
+  }
 
   // Handle local-media:// protocol with range request support for seeking
   protocol.handle('local-media', (request) => {
@@ -281,6 +315,13 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('will-quit', () => {
+  if (prodServer) {
+    prodServer.close();
+    prodServer = null;
   }
 });
 

@@ -303,11 +303,11 @@ export class DownloadEngine {
       '-o', outputTemplate,
     ];
 
-    // Resolution/quality selection
+    // Resolution/quality selection — use broad fallback chains to avoid "format not available"
     if (item.format === 'mp3') {
       args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
     } else if (item.resolution) {
-      args.push('-f', `bestvideo[height<=${item.resolution}]+bestaudio/best[height<=${item.resolution}]`);
+      args.push('-f', `bestvideo[height<=${item.resolution}]+bestaudio/bestvideo+bestaudio/best`);
     } else {
       args.push('-f', 'bestvideo+bestaudio/best');
     }
