@@ -149,7 +149,10 @@ function createWindow(): void {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    // CRITICAL: Load via custom protocol with HTTP-like origin instead of file://
+    // YouTube embeds reject file:// origins (Error 152). By serving through our
+    // custom protocol with a proper scheme, the iframe gets a valid origin.
+    mainWindow.loadURL('app://ytd/index.html');
   }
 
   mainWindow.on('closed', () => {
@@ -157,12 +160,26 @@ function createWindow(): void {
   });
 }
 
-// Register custom protocol to serve local media files securely
+// Register custom protocols before app is ready
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-media', privileges: { stream: true, bypassCSP: true, supportFetchAPI: true } },
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
 
 app.whenReady().then(() => {
+  // Serve the renderer (production build) via app:// protocol.
+  // This gives iframes a proper HTTP-like origin instead of file://,
+  // which is required for YouTube embeds to work (Error 152 fix).
+  protocol.handle('app', (request) => {
+    const url = new URL(request.url);
+    let filePath = path.join(__dirname, '../renderer', url.pathname);
+    // Default to index.html for root
+    if (url.pathname === '/' || url.pathname === '/index.html') {
+      filePath = path.join(__dirname, '../renderer/index.html');
+    }
+    return net.fetch(`file://${filePath}`);
+  });
+
   // Handle local-media:// protocol with range request support for seeking
   protocol.handle('local-media', (request) => {
     const filePath = decodeURIComponent(request.url.replace('local-media://', ''));
