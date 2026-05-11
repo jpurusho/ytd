@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme, Menu, protocol, net } from 'electron';
+import { app, BrowserWindow, nativeTheme, Menu, protocol, net, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { config } from 'dotenv';
@@ -14,6 +14,33 @@ let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
   nativeTheme.themeSource = 'dark';
+
+  // Fix YouTube embed Error 153: YouTube blocks Electron user agents.
+  // We must strip "Electron/x.x.x" from the UA BEFORE any content loads,
+  // and use onBeforeSendHeaders to ensure cross-origin iframes (YouTube embed)
+  // also get the cleaned UA. Setting session UA alone is insufficient for iframes.
+  const defaultSession = session.defaultSession;
+  const defaultUA = app.userAgentFallback;
+  const cleanUA = defaultUA
+    .replace(/\s*Electron\/\S+/, '')
+    .replace(/\s*ytd\/\S+/, '');
+  app.userAgentFallback = cleanUA;
+  defaultSession.setUserAgent(cleanUA);
+
+  // Intercept outgoing requests to YouTube and override the User-Agent header.
+  // This is essential because YouTube checks the UA header (not the session UA)
+  // for cross-origin iframe requests and will block embeds that look like Electron.
+  defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*', '*://*.googlevideo.com/*'] },
+    (details, callback) => {
+      details.requestHeaders['User-Agent'] = cleanUA;
+      // YouTube also checks the Referer/Origin for embed permissions
+      if (!details.requestHeaders['Referer']) {
+        details.requestHeaders['Referer'] = 'https://www.youtube.com/';
+      }
+      callback({ requestHeaders: details.requestHeaders });
+    }
+  );
 
   mainWindow = new BrowserWindow({
     title: 'ytd',
@@ -117,13 +144,6 @@ function createWindow(): void {
   mainWindow.on('leave-full-screen', () => {
     mainWindow?.webContents.send('app:fullscreenChange', false);
   });
-
-  // Remove "Electron/x.x.x" from the UA — YouTube blocks iframe embeds when it detects Electron.
-  // Must be set on both webContents AND session: webContents covers the main frame,
-  // session covers cross-origin iframes (like the YouTube embed).
-  const ua = mainWindow.webContents.getUserAgent().replace(/\s*Electron\/\S+/, '');
-  mainWindow.webContents.session.setUserAgent(ua);
-  mainWindow.webContents.setUserAgent(ua);
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');

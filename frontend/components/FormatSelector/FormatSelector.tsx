@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Button, Box, TextField, FormControl, InputLabel, Select, MenuItem,
@@ -78,13 +78,55 @@ export default function FormatSelector({ open, video, onClose, onDownload }: Pro
   const [formats, setFormats] = useState<FormatInfo[]>([]);
   const [loadingFormats, setLoadingFormats] = useState(false);
   const [formatError, setFormatError] = useState('');
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [playerReady, setPlayerReady] = useState(false);
 
   const videoDuration = video?.duration || 0;
+
+  // Listen for YouTube IFrame API ready message
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      // YouTube posts messages from youtube-nocookie.com
+      if (typeof event.data === 'string') {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.event === 'onReady' || data.event === 'initialDelivery') {
+            setPlayerReady(true);
+          }
+        } catch {}
+      }
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // Seek the YouTube player to a given time using postMessage (IFrame API)
+  const seekTo = useCallback((seconds: number) => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return;
+    // YouTube IFrame API command via postMessage
+    const command = JSON.stringify({
+      event: 'command',
+      func: 'seekTo',
+      args: [seconds, true],
+    });
+    iframe.contentWindow.postMessage(command, '*');
+  }, []);
+
+  // Debounced seek: fires 150ms after user stops moving the slider
+  const debouncedSeek = useCallback((seconds: number) => {
+    if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+    seekTimerRef.current = setTimeout(() => {
+      seekTo(seconds);
+    }, 150);
+  }, [seekTo]);
 
   useEffect(() => {
     if (open && video) {
       setLoadingFormats(true);
       setFormatError('');
+      setPlayerReady(false);
       setRangeValues([0, video.duration || 100]);
       setStartTime('');
       setEndTime('');
@@ -104,6 +146,8 @@ export default function FormatSelector({ open, video, onClose, onDownload }: Pro
     setRangeValues([start, end]);
     setStartTime(start > 0 ? secondsToHMS(start) : '');
     setEndTime(end < videoDuration ? secondsToHMS(end) : '');
+    // Scrub: seek the YouTube player to the start position as user drags
+    debouncedSeek(start);
   }
 
   function handleStartTimeInput(value: string) {
@@ -244,13 +288,14 @@ export default function FormatSelector({ open, video, onClose, onDownload }: Pro
               )}
             </Box>
 
-            {/* Video scrub preview */}
+            {/* Video scrub preview — uses YouTube IFrame API for seeking */}
             {videoDuration > 0 && video && (
               <Box sx={{ mb: 1.5, borderRadius: 1, overflow: 'hidden', bgcolor: '#000', position: 'relative', height: 160 }}>
                 <iframe
-                  src={`https://www.youtube-nocookie.com/embed/${video.id}?start=${rangeValues[0]}&end=${rangeValues[1]}&rel=0&origin=http://localhost`}
+                  ref={iframeRef}
+                  src={`https://www.youtube-nocookie.com/embed/${video.id}?enablejsapi=1&start=${Math.floor(rangeValues[0])}&rel=0&origin=${encodeURIComponent(window.location.origin)}`}
                   style={{ width: '100%', height: '100%', border: 'none' }}
-                  allow="encrypted-media"
+                  allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
                 />
                 <Box sx={{ position: 'absolute', bottom: 4, left: 8, right: 8, display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="caption" sx={{ bgcolor: 'rgba(0,0,0,0.7)', color: '#fff', px: 0.75, borderRadius: 0.5, fontSize: '0.7rem' }}>

@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getYtDlpPath, getFfmpegPath } from './tool-paths';
@@ -162,57 +162,107 @@ export class DownloadEngine {
     });
   }
 
+  /**
+   * Get all child PIDs of a process on macOS/Linux using pgrep.
+   * Returns the parent PID plus all descendant PIDs.
+   */
+  private getProcessTree(pid: number): number[] {
+    const pids = [pid];
+    try {
+      // pgrep -P finds direct children; we recurse to find entire tree
+      const output = execSync(`pgrep -P ${pid}`, { encoding: 'utf8', timeout: 3000 });
+      const children = output.trim().split('\n').map(Number).filter(n => n > 0);
+      for (const child of children) {
+        pids.push(...this.getProcessTree(child));
+      }
+    } catch {
+      // pgrep returns exit code 1 if no children found — that's fine
+    }
+    return pids;
+  }
+
+  /**
+   * Send a signal to a process and all its children.
+   * Uses the system `kill` command which is more reliable than Node's process.kill
+   * on macOS, especially for process groups and SIGSTOP/SIGCONT.
+   */
+  private signalTree(pid: number, signal: string): boolean {
+    const pids = this.getProcessTree(pid);
+    try {
+      // Use system kill command — more reliable than Node's process.kill for SIGSTOP
+      execSync(`kill -${signal} ${pids.join(' ')}`, { timeout: 3000 });
+      return true;
+    } catch {
+      // Fallback: try each individually
+      let success = false;
+      for (const p of pids) {
+        try {
+          execSync(`kill -${signal} ${p}`, { timeout: 2000 });
+          success = true;
+        } catch {}
+      }
+      return success;
+    }
+  }
+
   pauseDownload(queueId: number): boolean {
     const job = this.activeJobs.get(queueId);
     if (!job || job.status !== 'downloading') return false;
 
-    try {
-      // Send to process group so child processes (ffmpeg) also pause
-      process.kill(-job.process.pid!, 'SIGSTOP');
+    const pid = job.process.pid;
+    if (!pid) return false;
+
+    const success = this.signalTree(pid, 'STOP');
+    if (success) {
       job.status = 'paused';
-      return true;
-    } catch {
-      // Fallback: try direct pid
-      try {
-        process.kill(job.process.pid!, 'SIGSTOP');
-        job.status = 'paused';
-        return true;
-      } catch { return false; }
     }
+    return success;
   }
 
   resumeDownload(queueId: number): boolean {
     const job = this.activeJobs.get(queueId);
     if (!job || job.status !== 'paused') return false;
 
-    try {
-      process.kill(-job.process.pid!, 'SIGCONT');
+    const pid = job.process.pid;
+    if (!pid) return false;
+
+    const success = this.signalTree(pid, 'CONT');
+    if (success) {
       job.status = 'downloading';
-      return true;
-    } catch {
-      try {
-        process.kill(job.process.pid!, 'SIGCONT');
-        job.status = 'downloading';
-        return true;
-      } catch { return false; }
     }
+    return success;
   }
 
   cancelDownload(queueId: number): void {
     const job = this.activeJobs.get(queueId);
     if (!job) return;
 
-    try {
-      if (job.status === 'paused') {
-        try { process.kill(-job.process.pid!, 'SIGCONT'); } catch {
-          process.kill(job.process.pid!, 'SIGCONT');
-        }
-      }
-      // Kill entire process group
-      process.kill(-job.process.pid!, 'SIGTERM');
-    } catch {
-      try { job.process.kill('SIGTERM'); } catch {}
+    const pid = job.process.pid;
+    if (!pid) {
+      this.activeJobs.delete(queueId);
+      return;
     }
+
+    // If paused, resume first so the process can respond to TERM
+    if (job.status === 'paused') {
+      this.signalTree(pid, 'CONT');
+    }
+
+    // Kill entire process tree with SIGTERM, then SIGKILL as fallback
+    const killed = this.signalTree(pid, 'TERM');
+    if (!killed) {
+      try { job.process.kill('SIGKILL'); } catch {}
+    }
+
+    // Give a moment then force-kill any stragglers
+    setTimeout(() => {
+      try {
+        const remaining = this.getProcessTree(pid);
+        if (remaining.length > 0) {
+          execSync(`kill -9 ${remaining.join(' ')}`, { timeout: 2000 });
+        }
+      } catch {}
+    }, 500);
 
     this.activeJobs.delete(queueId);
   }
@@ -228,15 +278,27 @@ export class DownloadEngine {
   private buildCommand(item: QueueItem, outputDir: string): string[] {
     const isSegment = !!(item.startTime || item.endTime);
 
+    // For segment downloads, use a unique filename that includes the time range
+    // to avoid ffmpeg "file already exists" errors (exit code 183).
+    // --force-overwrites tells yt-dlp to overwrite, but ffmpeg subprocess also needs -y.
+    // --no-part prevents .part temp files that cause conflicts on retry.
+    let outputTemplate: string;
+    if (isSegment) {
+      const startTag = (item.startTime || '0').replace(/:/g, '.');
+      const endTag = (item.endTime || 'end').replace(/:/g, '.');
+      outputTemplate = path.join(outputDir, `%(title)s [${startTag}-${endTag}].%(ext)s`);
+    } else {
+      outputTemplate = path.join(outputDir, '%(title)s.%(ext)s');
+    }
+
     const args: string[] = [
       '--newline',
       '--no-colors',
       '--merge-output-format', item.format === 'mp3' ? 'mp4' : item.format,
-      // Segment downloads can't be resumed and need --force-overwrites so ffmpeg
-      // can overwrite any leftover intermediate files from a previous failed attempt.
-      // Full downloads use --continue + --no-overwrites to safely resume.
-      ...(isSegment ? ['--force-overwrites'] : ['--continue', '--no-overwrites']),
-      '-o', path.join(outputDir, '%(title)s.%(ext)s'),
+      // Segment downloads: --force-overwrites so ffmpeg can overwrite intermediates,
+      // --no-part avoids .part file conflicts. Full downloads: resume safely.
+      ...(isSegment ? ['--force-overwrites', '--no-part'] : ['--continue', '--no-overwrites']),
+      '-o', outputTemplate,
     ];
 
     // Resolution/quality selection
@@ -256,6 +318,8 @@ export class DownloadEngine {
       // Required for live-stream replays: MPEG-TS container handles timestamp
       // discontinuities that cause ffmpeg to fail when cutting HLS/DASH segments.
       args.push('--hls-use-mpegts');
+      // Pass -y to ffmpeg so it overwrites output without prompting
+      args.push('--postprocessor-args', 'ffmpeg:-y');
     }
 
     // Tell yt-dlp where ffmpeg is
