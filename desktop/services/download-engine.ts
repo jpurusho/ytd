@@ -63,6 +63,14 @@ export class DownloadEngine {
     const proc = spawn(ytDlpPath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: true,
+      env: {
+        ...process.env,
+        PATH: [
+          '/opt/homebrew/bin', '/usr/local/bin',
+          '/usr/bin', '/bin', '/usr/sbin', '/sbin',
+          process.env.PATH || '',
+        ].join(':'),
+      },
     });
 
     const job: DownloadJob = { queueId: item.id, process: proc, status: 'downloading' };
@@ -359,6 +367,14 @@ export async function getAvailableFormats(url: string): Promise<FormatInfo[]> {
   return new Promise((resolve, reject) => {
     const proc = spawn(ytDlpPath, ['--dump-json', '--no-download', url], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        PATH: [
+          '/opt/homebrew/bin', '/usr/local/bin',
+          '/usr/bin', '/bin', '/usr/sbin', '/sbin',
+          process.env.PATH || '',
+        ].join(':'),
+      },
     });
 
     let stdout = '';
