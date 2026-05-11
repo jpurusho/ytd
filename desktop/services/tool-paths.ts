@@ -36,6 +36,25 @@ export function getYtDlpPath(): string {
   return 'yt-dlp';
 }
 
+export function getQjsPath(): string | null {
+  if (!isDev) {
+    const bundled = path.join(process.resourcesPath, 'bin', 'qjs');
+    if (fs.existsSync(bundled)) return bundled;
+  }
+
+  const devBundled = path.join(app.getAppPath(), 'bin', platformBinDir, 'qjs');
+  if (fs.existsSync(devBundled)) return devBundled;
+
+  const systemPath = findInPath('qjs');
+  if (systemPath) return systemPath;
+
+  for (const p of ['/opt/homebrew/bin/qjs', '/usr/local/bin/qjs']) {
+    if (fs.existsSync(p)) return p;
+  }
+
+  return null;
+}
+
 export function getFfmpegPath(): string {
   if (!isDev) {
     const bundled = path.join(process.resourcesPath, 'bin', 'ffmpeg');

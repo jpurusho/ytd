@@ -1,7 +1,7 @@
 import { spawn, ChildProcess, execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getYtDlpPath, getFfmpegPath } from './tool-paths';
+import { getYtDlpPath, getFfmpegPath, getQjsPath } from './tool-paths';
 import { getSetting } from './database';
 import type { QueueItem, FormatInfo } from '../../shared/types';
 
@@ -336,6 +336,12 @@ export class DownloadEngine {
     const ffmpegDir = path.dirname(ffmpegPath);
     args.push('--ffmpeg-location', ffmpegDir);
 
+    // Tell yt-dlp where quickjs is (required for YouTube format decryption)
+    const qjsPath = getQjsPath();
+    if (qjsPath) {
+      args.push('--js-runtimes', `quickjs:${qjsPath}`);
+    }
+
     // Browser cookies for authenticated downloads
     const useCookies = getSetting('use_browser_cookies');
     const cookieBrowser = getSetting('cookie_browser') || 'chrome';
@@ -363,9 +369,13 @@ export class DownloadEngine {
 
 export async function getAvailableFormats(url: string): Promise<FormatInfo[]> {
   const ytDlpPath = getYtDlpPath();
+  const qjsPath = getQjsPath();
+  const args = ['--dump-json', '--no-download'];
+  if (qjsPath) args.push('--js-runtimes', `quickjs:${qjsPath}`);
+  args.push(url);
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(ytDlpPath, ['--dump-json', '--no-download', url], {
+    const proc = spawn(ytDlpPath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,

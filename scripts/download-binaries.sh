@@ -77,6 +77,36 @@ chmod +x "$BIN_DIR/ffprobe" 2>/dev/null || true
 echo "  ffmpeg: $("$BIN_DIR/ffmpeg" -version 2>&1 | head -1 || echo 'installed')"
 echo "  arch: $(file "$BIN_DIR/ffmpeg" 2>/dev/null | grep -o 'arm64\|x86_64' || echo 'unknown')"
 
+# ─── quickjs ────────────────────────────────────────────────────────────────
+# Lightweight JS runtime (~700KB) needed by yt-dlp for YouTube format decryption
+
+echo "Installing quickjs..."
+if [ "$PLATFORM" = "darwin" ]; then
+  if command -v brew &>/dev/null; then
+    brew install quickjs 2>/dev/null || true
+    QJS_PATH="$(realpath "$(brew --prefix)/bin/qjs" 2>/dev/null || echo "")"
+    if [ -n "$QJS_PATH" ] && [ -f "$QJS_PATH" ]; then
+      cp "$QJS_PATH" "$BIN_DIR/qjs"
+    fi
+  fi
+elif [ "$PLATFORM" = "linux" ]; then
+  # Build from source for linux if needed
+  if command -v apt-get &>/dev/null; then
+    sudo apt-get install -y quickjs 2>/dev/null || true
+    QJS_PATH="$(which qjs 2>/dev/null || echo "")"
+    if [ -n "$QJS_PATH" ]; then
+      cp "$QJS_PATH" "$BIN_DIR/qjs"
+    fi
+  fi
+fi
+
+if [ -f "$BIN_DIR/qjs" ]; then
+  chmod +x "$BIN_DIR/qjs"
+  echo "  quickjs: $("$BIN_DIR/qjs" --help 2>&1 | head -1 || echo 'installed')"
+else
+  echo "  WARNING: quickjs not installed — some YouTube downloads may fail"
+fi
+
 echo ""
 echo "=== Done! Binaries saved to $BIN_DIR ==="
 ls -la "$BIN_DIR"

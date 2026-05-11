@@ -30,15 +30,13 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Download yt-dlp and ffmpeg binaries
+      - name: Download yt-dlp, ffmpeg, and quickjs binaries
         run: |
           mkdir -p bin/mac
           # yt-dlp (universal macOS binary — works on both arm64 and x64)
           curl -L --fail "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o bin/mac/yt-dlp
           chmod +x bin/mac/yt-dlp
           # ffmpeg + ffprobe: static arm64 builds from osxexperts.net
-          # These link only to system frameworks (libc++, VideoToolbox, etc.)
-          # No Homebrew or Rosetta needed.
           curl -L --fail "https://www.osxexperts.net/ffmpeg7arm.zip" -o /tmp/ffmpeg.zip
           unzip -o /tmp/ffmpeg.zip -d bin/mac/
           rm /tmp/ffmpeg.zip
@@ -46,9 +44,14 @@ jobs:
           unzip -o /tmp/ffprobe.zip -d bin/mac/
           rm /tmp/ffprobe.zip
           chmod +x bin/mac/ffmpeg bin/mac/ffprobe
-          # Verify arm64 architecture
-          file bin/mac/ffmpeg bin/mac/ffprobe bin/mac/yt-dlp
+          # quickjs: lightweight JS runtime required by yt-dlp for YouTube format decryption
+          brew install quickjs
+          cp "$(realpath /opt/homebrew/bin/qjs)" bin/mac/qjs
+          chmod +x bin/mac/qjs
+          # Verify all binaries
+          file bin/mac/ffmpeg bin/mac/ffprobe bin/mac/yt-dlp bin/mac/qjs
           bin/mac/yt-dlp --version
+          bin/mac/qjs --help | head -1
           ls -la bin/mac/
 
       - name: Build application
