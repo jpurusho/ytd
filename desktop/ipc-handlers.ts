@@ -223,8 +223,21 @@ export function registerIpcHandlers(): void {
     return checkToolsInstalled();
   });
 
+  // Persist update cache to disk so it survives app restarts
+  const updateCachePath = path.join(app.getPath('userData'), 'update-cache.json');
   let lastETag: string | null = null;
   let cachedRelease: any = null;
+  try {
+    const cached = JSON.parse(fs.readFileSync(updateCachePath, 'utf8'));
+    lastETag = cached.etag || null;
+    cachedRelease = cached.release || null;
+  } catch {}
+
+  function saveUpdateCache() {
+    try {
+      fs.writeFileSync(updateCachePath, JSON.stringify({ etag: lastETag, release: cachedRelease }));
+    } catch {}
+  }
 
   ipcMain.handle('app:checkForUpdates', async () => {
     const currentVersion = app.getVersion();
@@ -234,7 +247,6 @@ export function registerIpcHandlers(): void {
 
       const release: any = await new Promise((resolve, reject) => {
         const headers: Record<string, string> = { 'User-Agent': 'ytd-updater' };
-        // Use conditional request to avoid rate limiting
         if (lastETag) headers['If-None-Match'] = lastETag;
 
         https.get({
@@ -248,14 +260,13 @@ export function registerIpcHandlers(): void {
             if (res.statusCode === 200) {
               lastETag = res.headers['etag'] || null;
               cachedRelease = JSON.parse(data);
+              saveUpdateCache();
               resolve(cachedRelease);
             } else if (res.statusCode === 304) {
-              // Not modified — use cached
               resolve(cachedRelease);
             } else if (res.statusCode === 404) {
               reject(new Error('No releases found.'));
-            } else if (res.statusCode === 403) {
-              // Rate limited — use cache if available
+            } else if (res.statusCode === 403 || res.statusCode === 429) {
               if (cachedRelease) resolve(cachedRelease);
               else reject(new Error('GitHub API rate limit. Try again later.'));
             } else {
@@ -263,7 +274,6 @@ export function registerIpcHandlers(): void {
             }
           });
         }).on('error', (err: any) => {
-          // Network error — use cache if available
           if (cachedRelease) resolve(cachedRelease);
           else reject(new Error(`Cannot reach GitHub: ${err.message}`));
         });
