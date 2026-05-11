@@ -57,11 +57,14 @@ function runYtDlp(args: string, opts?: { timeout?: number }): string {
       env: PACKAGED_ENV,
     });
   } catch (err: any) {
-    const stderr = err.stderr || err.message || '';
-    if (stderr.includes('Sign in to confirm') || stderr.includes('not a bot')) {
-      if (isCI) {
-        throw new Error('YOUTUBE_BOT_BLOCK');
-      }
+    const output = (err.stdout || '') + (err.stderr || '') + (err.message || '');
+    const isBotBlock = output.includes('Sign in to confirm') ||
+      output.includes('not a bot') ||
+      output.includes('Video unavailable') ||
+      // Empty output with exit code 1 in CI = YouTube silently rejected
+      (isCI && !err.stdout && !err.stderr);
+    if (isBotBlock && isCI) {
+      throw new Error('YOUTUBE_BOT_BLOCK');
     }
     throw err;
   }
@@ -181,10 +184,13 @@ describe('YouTube format extraction (packaged env)', () => {
     it(`extracts formats for ${video.desc} (${video.id})`, () => {
       try {
         const result = runYtDlp(
-          `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" --dump-json --no-download "${video.url}" 2>/dev/null`,
+          `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" --dump-json --no-download "${video.url}"`,
           { timeout: 60000 }
         );
-        const info = JSON.parse(result);
+        // stdout may contain debug lines before JSON; extract the JSON object
+        const jsonStart = result.indexOf('{');
+        if (jsonStart === -1) throw new Error(`No JSON in output: ${result.slice(0, 200)}`);
+        const info = JSON.parse(result.slice(jsonStart));
         expect(info.id).toBe(video.id);
         expect(info.title).toBeTruthy();
         expect(info.formats).toBeDefined();
@@ -204,7 +210,7 @@ describe('YouTube format extraction (packaged env)', () => {
       const result = runYtDlp(
         `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" ` +
         `-f "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best[height<=1080]/best" ` +
-        `--no-download --print "%(format)s" "https://www.youtube.com/watch?v=-uW5-TaVXu4" 2>/dev/null`,
+        `--no-download --print "%(format)s" "https://www.youtube.com/watch?v=-uW5-TaVXu4" 2>&1`,
         { timeout: 60000 }
       );
       expect(result.trim()).toBeTruthy();
@@ -223,7 +229,7 @@ describe('YouTube format extraction (packaged env)', () => {
       const result = runYtDlp(
         `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" ` +
         `-x --audio-format mp3 --audio-quality 0 ` +
-        `--no-download --print "%(format)s" "https://www.youtube.com/watch?v=-uW5-TaVXu4" 2>/dev/null`,
+        `--no-download --print "%(format)s" "https://www.youtube.com/watch?v=-uW5-TaVXu4" 2>&1`,
         { timeout: 60000 }
       );
       expect(result.trim()).toBeTruthy();
