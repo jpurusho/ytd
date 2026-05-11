@@ -9,3 +9,4 @@ bin/linux/
 legacy/
 .DS_Store
 *.log
+tmp-test-downloads/

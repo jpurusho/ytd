@@ -1,0 +1,65 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npx vitest run tests/app.test.ts
+
+  integration-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download binaries
+        run: |
+          mkdir -p bin/mac
+          # yt-dlp
+          curl -L --fail "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o bin/mac/yt-dlp
+          chmod +x bin/mac/yt-dlp
+          bin/mac/yt-dlp --version
+          # ffmpeg + ffprobe
+          curl -L --fail "https://www.osxexperts.net/ffmpeg7arm.zip" -o /tmp/ffmpeg.zip
+          unzip -o /tmp/ffmpeg.zip -d bin/mac/
+          rm /tmp/ffmpeg.zip
+          curl -L --fail "https://www.osxexperts.net/ffprobe7arm.zip" -o /tmp/ffprobe.zip
+          unzip -o /tmp/ffprobe.zip -d bin/mac/
+          rm /tmp/ffprobe.zip
+          chmod +x bin/mac/ffmpeg bin/mac/ffprobe
+          # quickjs
+          brew install quickjs
+          cp "$(realpath /opt/homebrew/bin/qjs)" bin/mac/qjs
+          chmod +x bin/mac/qjs
+          # Verify
+          file bin/mac/*
+          ls -la bin/mac/
+
+      - name: Run integration tests
+        run: npx vitest run tests/download.test.ts
+        timeout-minutes: 5

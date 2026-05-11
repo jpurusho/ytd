@@ -6,7 +6,9 @@
   "author": "Jerome Purushotham",
   "license": "MIT",
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run tests/app.test.ts",
+    "test:integration": "vitest run tests/download.test.ts",
+    "test:all": "vitest run",
     "test:watch": "vitest",
     "dev": "concurrently -k \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
