@@ -60,6 +60,56 @@ jobs:
           file bin/mac/*
           ls -la bin/mac/
 
-      - name: Run integration tests
+      - name: Build app (same as CI release build)
+        run: npm run build
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+
+      - name: Package app
+        run: npx electron-builder build --mac --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run integration tests against packaged binaries
+        run: |
+          # Extract the packaged app to get the actual resourcesPath layout
+          APP_ZIP=$(ls release/*.zip | head -1)
+          echo "Extracting $APP_ZIP..."
+          unzip -q "$APP_ZIP" -d /tmp/ytd-test-app
+
+          # Find the app bundle
+          APP_PATH=$(find /tmp/ytd-test-app -name "ytd.app" -type d | head -1)
+          echo "App at: $APP_PATH"
+
+          # Verify bundled binaries exist in the packaged app
+          RESOURCES="$APP_PATH/Contents/Resources/bin"
+          echo "=== Bundled binaries in packaged app ==="
+          ls -la "$RESOURCES/"
+          file "$RESOURCES"/*
+
+          # Verify each binary runs
+          echo "--- yt-dlp version ---"
+          "$RESOURCES/yt-dlp" --version
+          echo "--- ffmpeg version ---"
+          "$RESOURCES/ffmpeg" -version | head -1
+          echo "--- ffprobe version ---"
+          "$RESOURCES/ffprobe" -version | head -1
+          echo "--- qjs ---"
+          "$RESOURCES/qjs" --help 2>&1 | head -1 || true
+
+          # Symlink the packaged binaries into bin/mac so tests use them
+          rm -rf bin/mac
+          mkdir -p bin/mac
+          for f in "$RESOURCES"/*; do
+            ln -sf "$f" "bin/mac/$(basename $f)"
+          done
+          echo "=== Test will use these binaries ==="
+          ls -la bin/mac/
+
+      - name: Run integration tests (packaged app env)
         run: npx vitest run tests/download.test.ts
         timeout-minutes: 5
+        env:
+          # Strip PATH down to simulate Finder launch — no Homebrew, no deno
+          PATH: /usr/bin:/bin:/usr/sbin:/sbin:./node_modules/.bin
