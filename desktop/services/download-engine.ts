@@ -32,6 +32,7 @@ const NON_DOWNLOADABLE_ERRORS: Array<{ pattern: RegExp; message: string }> = [
   { pattern: /This video has been removed/i, message: 'This video has been removed' },
   { pattern: /HTTP Error 403/i, message: 'Access denied — video may require authentication' },
   { pattern: /HTTP Error 404/i, message: 'Video not found' },
+  { pattern: /Requested format is not available/i, message: 'No compatible format found — try enabling browser cookies in Settings, or try a different resolution' },
 ];
 
 export class DownloadEngine {
@@ -296,7 +297,6 @@ export class DownloadEngine {
     const args: string[] = [
       '--newline',
       '--no-colors',
-      '--merge-output-format', item.format === 'mp3' ? 'mp4' : item.format,
       // Segment downloads: --force-overwrites so ffmpeg can overwrite intermediates,
       // --no-part avoids .part file conflicts. Full downloads: resume safely.
       ...(isSegment ? ['--force-overwrites', '--no-part'] : ['--continue', '--no-overwrites']),
@@ -307,9 +307,11 @@ export class DownloadEngine {
     if (item.format === 'mp3') {
       args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
     } else if (item.resolution) {
-      args.push('-f', `bestvideo[height<=${item.resolution}]+bestaudio/bestvideo+bestaudio/best`);
+      args.push('-f', `bestvideo[height<=${item.resolution}]+bestaudio/bestvideo+bestaudio/best[height<=${item.resolution}]/best`);
+      args.push('--merge-output-format', item.format);
     } else {
       args.push('-f', 'bestvideo+bestaudio/best');
+      args.push('--merge-output-format', item.format);
     }
 
     // Time range segment extraction
