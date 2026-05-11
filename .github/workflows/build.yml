@@ -33,19 +33,23 @@ jobs:
       - name: Download yt-dlp and ffmpeg binaries
         run: |
           mkdir -p bin/mac
-          # yt-dlp (universal macOS binary)
+          # yt-dlp (universal macOS binary — works on both arm64 and x64)
           curl -L --fail "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o bin/mac/yt-dlp
           chmod +x bin/mac/yt-dlp
-          # ffmpeg + ffprobe from evermeet.cx (x64 static, runs on arm64 via Rosetta)
-          curl -L "https://evermeet.cx/ffmpeg/getrelease/zip" -o /tmp/ffmpeg.zip && unzip -o /tmp/ffmpeg.zip -d bin/mac/ && rm /tmp/ffmpeg.zip || true
-          curl -L "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip" -o /tmp/ffprobe.zip && unzip -o /tmp/ffprobe.zip -d bin/mac/ && rm /tmp/ffprobe.zip || true
-          # Fallback: use system ffmpeg if download failed
-          if [ ! -f bin/mac/ffmpeg ]; then
-            which ffmpeg && cp "$(which ffmpeg)" bin/mac/ffmpeg && cp "$(which ffprobe)" bin/mac/ffprobe || echo "WARNING: ffmpeg not bundled"
-          fi
-          chmod +x bin/mac/ffmpeg bin/mac/ffprobe 2>/dev/null || true
-          ls -la bin/mac/
+          # ffmpeg + ffprobe: static arm64 builds from osxexperts.net
+          # These link only to system frameworks (libc++, VideoToolbox, etc.)
+          # No Homebrew or Rosetta needed.
+          curl -L --fail "https://www.osxexperts.net/ffmpeg7arm.zip" -o /tmp/ffmpeg.zip
+          unzip -o /tmp/ffmpeg.zip -d bin/mac/
+          rm /tmp/ffmpeg.zip
+          curl -L --fail "https://www.osxexperts.net/ffprobe7arm.zip" -o /tmp/ffprobe.zip
+          unzip -o /tmp/ffprobe.zip -d bin/mac/
+          rm /tmp/ffprobe.zip
+          chmod +x bin/mac/ffmpeg bin/mac/ffprobe
+          # Verify arm64 architecture
+          file bin/mac/ffmpeg bin/mac/ffprobe bin/mac/yt-dlp
           bin/mac/yt-dlp --version
+          ls -la bin/mac/
 
       - name: Build application
         run: npm run build

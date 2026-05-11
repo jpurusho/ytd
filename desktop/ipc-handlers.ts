@@ -223,6 +223,9 @@ export function registerIpcHandlers(): void {
     return checkToolsInstalled();
   });
 
+  let lastETag: string | null = null;
+  let cachedRelease: any = null;
+
   ipcMain.handle('app:checkForUpdates', async () => {
     const currentVersion = app.getVersion();
 
@@ -230,26 +233,39 @@ export function registerIpcHandlers(): void {
       const https = require('https');
 
       const release: any = await new Promise((resolve, reject) => {
+        const headers: Record<string, string> = { 'User-Agent': 'ytd-updater' };
+        // Use conditional request to avoid rate limiting
+        if (lastETag) headers['If-None-Match'] = lastETag;
+
         https.get({
           hostname: 'api.github.com',
           path: '/repos/jpurusho/ytd/releases/latest',
-          headers: { 'User-Agent': 'ytd-updater' },
+          headers,
         }, (res: any) => {
           let data = '';
           res.on('data', (chunk: string) => { data += chunk; });
           res.on('end', () => {
             if (res.statusCode === 200) {
-              resolve(JSON.parse(data));
+              lastETag = res.headers['etag'] || null;
+              cachedRelease = JSON.parse(data);
+              resolve(cachedRelease);
+            } else if (res.statusCode === 304) {
+              // Not modified — use cached
+              resolve(cachedRelease);
             } else if (res.statusCode === 404) {
               reject(new Error('No releases found.'));
             } else if (res.statusCode === 403) {
-              reject(new Error('GitHub API rate limit reached. Try again later.'));
+              // Rate limited — use cache if available
+              if (cachedRelease) resolve(cachedRelease);
+              else reject(new Error('GitHub API rate limit. Try again later.'));
             } else {
               reject(new Error(`Update check failed (HTTP ${res.statusCode}).`));
             }
           });
         }).on('error', (err: any) => {
-          reject(new Error(`Cannot reach GitHub: ${err.message}`));
+          // Network error — use cache if available
+          if (cachedRelease) resolve(cachedRelease);
+          else reject(new Error(`Cannot reach GitHub: ${err.message}`));
         });
       });
 
