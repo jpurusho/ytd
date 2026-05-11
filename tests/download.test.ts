@@ -1,7 +1,16 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { execSync, spawn } from 'child_process';
+import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+
+/**
+ * Integration tests that simulate the PACKAGED APP environment:
+ * - Only bundled binaries from bin/mac/ (no system fallbacks)
+ * - Minimal PATH (no /opt/homebrew/bin, no deno, no node)
+ * - Explicit --js-runtimes pointing to bundled qjs
+ *
+ * This ensures what works here will work on a fresh Mac with no dev tools.
+ */
 
 const TEST_VIDEOS = [
   { id: '-uW5-TaVXu4', url: 'https://www.youtube.com/watch?v=-uW5-TaVXu4', desc: 'video with dash in ID' },
@@ -14,102 +23,102 @@ const ffmpegPath = path.join(BIN_DIR, 'ffmpeg');
 const ffprobePath = path.join(BIN_DIR, 'ffprobe');
 const qjsPath = path.join(BIN_DIR, 'qjs');
 
-// Also check system paths as fallback (for CI/dev where bin/mac may not exist yet)
-function findBinary(name: string, bundledPath: string): string | null {
-  if (fs.existsSync(bundledPath)) return bundledPath;
-  try {
-    return execSync(`which ${name}`, { encoding: 'utf8' }).trim() || null;
-  } catch {
-    return null;
+// Minimal PATH that a packaged .app gets when launched from Finder
+// Deliberately excludes /opt/homebrew/bin (deno, node, etc.)
+const PACKAGED_ENV = {
+  HOME: process.env.HOME || '',
+  TMPDIR: process.env.TMPDIR || '/tmp',
+  PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+};
+
+function requireBinaries() {
+  if (!fs.existsSync(BIN_DIR)) {
+    throw new Error(
+      `bin/mac/ not found. Run "npm run download-bins" first.`
+    );
   }
 }
 
-describe('Binary availability', () => {
+describe('Binary availability (bundled only)', () => {
+  beforeAll(requireBinaries);
+
   it('yt-dlp binary exists and is executable', () => {
-    const bin = findBinary('yt-dlp', ytDlpPath);
-    expect(bin).not.toBeNull();
-    const version = execSync(`"${bin}" --version`, { encoding: 'utf8' }).trim();
+    expect(fs.existsSync(ytDlpPath)).toBe(true);
+    const version = execSync(`"${ytDlpPath}" --version`, {
+      encoding: 'utf8',
+      env: PACKAGED_ENV,
+    }).trim();
     expect(version).toMatch(/^\d{4}\.\d{2}\.\d{2}/);
   });
 
   it('ffmpeg binary exists and is executable', () => {
-    const bin = findBinary('ffmpeg', ffmpegPath);
-    expect(bin).not.toBeNull();
-    const output = execSync(`"${bin}" -version`, { encoding: 'utf8' });
+    expect(fs.existsSync(ffmpegPath)).toBe(true);
+    const output = execSync(`"${ffmpegPath}" -version`, {
+      encoding: 'utf8',
+      env: PACKAGED_ENV,
+    });
     expect(output).toContain('ffmpeg version');
   });
 
   it('ffprobe binary exists and is executable', () => {
-    const bin = findBinary('ffprobe', ffprobePath);
-    expect(bin).not.toBeNull();
-    const output = execSync(`"${bin}" -version`, { encoding: 'utf8' });
+    expect(fs.existsSync(ffprobePath)).toBe(true);
+    const output = execSync(`"${ffprobePath}" -version`, {
+      encoding: 'utf8',
+      env: PACKAGED_ENV,
+    });
     expect(output).toContain('ffprobe version');
   });
 
   it('quickjs (qjs) binary exists and is executable', () => {
-    const bin = findBinary('qjs', qjsPath);
-    expect(bin).not.toBeNull();
-    const output = execSync(`"${bin}" --help 2>&1 || true`, { encoding: 'utf8' });
+    expect(fs.existsSync(qjsPath)).toBe(true);
+    const output = execSync(`"${qjsPath}" --help 2>&1 || true`, {
+      encoding: 'utf8',
+      env: PACKAGED_ENV,
+    });
     expect(output.toLowerCase()).toMatch(/quickjs|usage|qjs/);
   });
 
   it('binaries are arm64 on macOS', () => {
     if (process.platform !== 'darwin') return;
-    const bins = [ytDlpPath, ffmpegPath, ffprobePath, qjsPath].filter(fs.existsSync);
-    for (const bin of bins) {
+    for (const bin of [ytDlpPath, ffmpegPath, ffprobePath, qjsPath]) {
       const fileInfo = execSync(`file "${bin}"`, { encoding: 'utf8' });
-      // yt-dlp_macos is universal (arm64 + x86_64), others should be arm64
       expect(fileInfo).toMatch(/arm64|universal/);
     }
   });
 });
 
-describe('yt-dlp JS runtime integration', () => {
-  it('yt-dlp detects quickjs as JS runtime', () => {
-    const bin = findBinary('yt-dlp', ytDlpPath);
-    const qjs = findBinary('qjs', qjsPath);
-    if (!bin || !qjs) return;
+describe('yt-dlp JS runtime (packaged env)', () => {
+  beforeAll(requireBinaries);
 
+  it('yt-dlp uses bundled quickjs with no system JS runtimes available', () => {
     const output = execSync(
-      `"${bin}" --js-runtimes "quickjs:${qjs}" -v --no-download --print "%(id)s" "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 2>&1`,
-      { encoding: 'utf8', timeout: 30000 }
+      `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" -v --no-download --print "%(id)s" "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 2>&1`,
+      { encoding: 'utf8', timeout: 60000, env: PACKAGED_ENV }
     );
-    expect(output).toContain('quickjs');
-  });
-
-  it('yt-dlp solves JS challenges when only quickjs is available', () => {
-    const bin = findBinary('yt-dlp', ytDlpPath);
-    const qjs = findBinary('qjs', qjsPath);
-    if (!bin || !qjs) return;
-
-    // Run with minimal PATH so only quickjs is found (not deno/node)
-    const output = execSync(
-      `"${bin}" --js-runtimes "quickjs:${qjs}" -v --no-download --print "%(id)s" "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 2>&1`,
-      { encoding: 'utf8', timeout: 60000, env: { ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin' } }
-    );
+    // Must use quickjs since deno/node are not in PATH
     expect(output).toContain('Solving JS challenges using quickjs');
     expect(output).toContain('dQw4w9WgXcQ');
   });
+
+  it('yt-dlp finds bundled ffmpeg via --ffmpeg-location', () => {
+    const output = execSync(
+      `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" -v --no-download --print "%(id)s" "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 2>&1`,
+      { encoding: 'utf8', timeout: 60000, env: PACKAGED_ENV }
+    );
+    expect(output).toContain('dQw4w9WgXcQ');
+    // Should NOT warn about missing ffmpeg
+    expect(output).not.toContain('ffmpeg not found');
+  });
 });
 
-describe('YouTube format extraction', () => {
-  let ytDlp: string | null;
-  let qjs: string | null;
-  let ffmpeg: string | null;
-
-  beforeAll(() => {
-    ytDlp = findBinary('yt-dlp', ytDlpPath);
-    qjs = findBinary('qjs', qjsPath);
-    ffmpeg = findBinary('ffmpeg', ffmpegPath);
-  });
+describe('YouTube format extraction (packaged env)', () => {
+  beforeAll(requireBinaries);
 
   for (const video of TEST_VIDEOS) {
     it(`extracts formats for ${video.desc} (${video.id})`, () => {
-      if (!ytDlp || !qjs) return;
-
       const result = execSync(
-        `"${ytDlp}" --js-runtimes "quickjs:${qjs}" --dump-json --no-download "${video.url}" 2>/dev/null`,
-        { encoding: 'utf8', timeout: 60000 }
+        `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" --dump-json --no-download "${video.url}" 2>/dev/null`,
+        { encoding: 'utf8', timeout: 60000, env: PACKAGED_ENV }
       );
       const info = JSON.parse(result);
       expect(info.id).toBe(video.id);
@@ -120,84 +129,70 @@ describe('YouTube format extraction', () => {
   }
 
   it('format string with resolution fallback works', () => {
-    if (!ytDlp || !qjs) return;
-
     const result = execSync(
-      `"${ytDlp}" --js-runtimes "quickjs:${qjs}" -f "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best[height<=1080]/best" --no-download --print "%(format)s" "https://www.youtube.com/watch?v=-uW5-TaVXu4" 2>/dev/null`,
-      { encoding: 'utf8', timeout: 60000 }
+      `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" ` +
+      `-f "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best[height<=1080]/best" ` +
+      `--no-download --print "%(format)s" "https://www.youtube.com/watch?v=-uW5-TaVXu4" 2>/dev/null`,
+      { encoding: 'utf8', timeout: 60000, env: PACKAGED_ENV }
     );
     expect(result.trim()).toBeTruthy();
     expect(result.trim()).not.toContain('ERROR');
   });
 
   it('mp3 extraction format string works', () => {
-    if (!ytDlp || !qjs) return;
-
     const result = execSync(
-      `"${ytDlp}" --js-runtimes "quickjs:${qjs}" -x --audio-format mp3 --audio-quality 0 --no-download --print "%(format)s" "https://www.youtube.com/watch?v=-uW5-TaVXu4" 2>/dev/null`,
-      { encoding: 'utf8', timeout: 60000 }
+      `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" ` +
+      `-x --audio-format mp3 --audio-quality 0 ` +
+      `--no-download --print "%(format)s" "https://www.youtube.com/watch?v=-uW5-TaVXu4" 2>/dev/null`,
+      { encoding: 'utf8', timeout: 60000, env: PACKAGED_ENV }
     );
     expect(result.trim()).toBeTruthy();
   });
 });
 
-describe('Download integration', () => {
-  let ytDlp: string | null;
-  let qjs: string | null;
-  let ffmpeg: string | null;
+describe('Download integration (packaged env)', () => {
   const tmpDir = path.join(__dirname, '..', 'tmp-test-downloads');
 
   beforeAll(() => {
-    ytDlp = findBinary('yt-dlp', ytDlpPath);
-    qjs = findBinary('qjs', qjsPath);
-    ffmpeg = findBinary('ffmpeg', ffmpegPath);
+    requireBinaries();
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
   });
 
   it('downloads a short segment (5 seconds) as mp4', () => {
-    if (!ytDlp || !qjs || !ffmpeg) return;
-
-    const ffmpegDir = path.dirname(ffmpeg!);
     const output = path.join(tmpDir, 'test-segment.%(ext)s');
 
     execSync(
-      `"${ytDlp}" --js-runtimes "quickjs:${qjs}" ` +
+      `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" ` +
       `-f "bestvideo[height<=480]+bestaudio/best[height<=480]/best" ` +
       `--merge-output-format mp4 ` +
       `--download-sections "*0:00-0:05" ` +
       `--force-overwrites --no-part ` +
       `--postprocessor-args "ffmpeg:-y" ` +
-      `--ffmpeg-location "${ffmpegDir}" ` +
       `-o "${output}" ` +
       `"https://www.youtube.com/watch?v=-uW5-TaVXu4"`,
-      { encoding: 'utf8', timeout: 120000 }
+      { encoding: 'utf8', timeout: 120000, env: PACKAGED_ENV }
     );
 
-    // Find the downloaded file
     const files = fs.readdirSync(tmpDir).filter(f => f.startsWith('test-segment'));
     expect(files.length).toBeGreaterThan(0);
 
     const filePath = path.join(tmpDir, files[0]);
     const stat = fs.statSync(filePath);
-    expect(stat.size).toBeGreaterThan(10000); // At least 10KB for 5s of video
+    expect(stat.size).toBeGreaterThan(10000);
   });
 
   it('downloads audio only as mp3', () => {
-    if (!ytDlp || !qjs || !ffmpeg) return;
-
-    const ffmpegDir = path.dirname(ffmpeg!);
     const output = path.join(tmpDir, 'test-audio.%(ext)s');
 
     execSync(
-      `"${ytDlp}" --js-runtimes "quickjs:${qjs}" ` +
+      `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" ` +
       `-x --audio-format mp3 --audio-quality 0 ` +
       `--download-sections "*0:00-0:05" ` +
       `--force-overwrites --no-part ` +
       `--postprocessor-args "ffmpeg:-y" ` +
-      `--ffmpeg-location "${ffmpegDir}" ` +
       `-o "${output}" ` +
       `"https://www.youtube.com/watch?v=-uW5-TaVXu4"`,
-      { encoding: 'utf8', timeout: 120000 }
+      { encoding: 'utf8', timeout: 120000, env: PACKAGED_ENV }
     );
 
     const files = fs.readdirSync(tmpDir).filter(f => f.startsWith('test-audio'));
@@ -205,7 +200,30 @@ describe('Download integration', () => {
 
     const filePath = path.join(tmpDir, files[0]);
     const stat = fs.statSync(filePath);
-    expect(stat.size).toBeGreaterThan(5000); // At least 5KB for 5s of audio
+    expect(stat.size).toBeGreaterThan(5000);
+  });
+
+  it('downloads video with dash-prefixed ID', () => {
+    const output = path.join(tmpDir, 'test-dash-id.%(ext)s');
+
+    execSync(
+      `"${ytDlpPath}" --js-runtimes "quickjs:${qjsPath}" --ffmpeg-location "${BIN_DIR}" ` +
+      `-f "bestvideo[height<=480]+bestaudio/best[height<=480]/best" ` +
+      `--merge-output-format mp4 ` +
+      `--download-sections "*0:00-0:05" ` +
+      `--force-overwrites --no-part ` +
+      `--postprocessor-args "ffmpeg:-y" ` +
+      `-o "${output}" ` +
+      `"https://www.youtube.com/watch?v=-QVoIxEpFkM"`,
+      { encoding: 'utf8', timeout: 120000, env: PACKAGED_ENV }
+    );
+
+    const files = fs.readdirSync(tmpDir).filter(f => f.startsWith('test-dash-id'));
+    expect(files.length).toBeGreaterThan(0);
+
+    const filePath = path.join(tmpDir, files[0]);
+    const stat = fs.statSync(filePath);
+    expect(stat.size).toBeGreaterThan(10000);
   });
 
   it('cleans up test downloads', () => {
