@@ -59,6 +59,7 @@ export class DownloadEngine {
 
     const proc = spawn(ytDlpPath, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,
     });
 
     const job: DownloadJob = { queueId: item.id, process: proc, status: 'downloading' };
@@ -166,11 +167,17 @@ export class DownloadEngine {
     if (!job || job.status !== 'downloading') return false;
 
     try {
-      process.kill(job.process.pid!, 'SIGSTOP');
+      // Send to process group so child processes (ffmpeg) also pause
+      process.kill(-job.process.pid!, 'SIGSTOP');
       job.status = 'paused';
       return true;
     } catch {
-      return false;
+      // Fallback: try direct pid
+      try {
+        process.kill(job.process.pid!, 'SIGSTOP');
+        job.status = 'paused';
+        return true;
+      } catch { return false; }
     }
   }
 
@@ -179,11 +186,15 @@ export class DownloadEngine {
     if (!job || job.status !== 'paused') return false;
 
     try {
-      process.kill(job.process.pid!, 'SIGCONT');
+      process.kill(-job.process.pid!, 'SIGCONT');
       job.status = 'downloading';
       return true;
     } catch {
-      return false;
+      try {
+        process.kill(job.process.pid!, 'SIGCONT');
+        job.status = 'downloading';
+        return true;
+      } catch { return false; }
     }
   }
 
@@ -193,10 +204,15 @@ export class DownloadEngine {
 
     try {
       if (job.status === 'paused') {
-        process.kill(job.process.pid!, 'SIGCONT');
+        try { process.kill(-job.process.pid!, 'SIGCONT'); } catch {
+          process.kill(job.process.pid!, 'SIGCONT');
+        }
       }
-      job.process.kill('SIGTERM');
-    } catch {}
+      // Kill entire process group
+      process.kill(-job.process.pid!, 'SIGTERM');
+    } catch {
+      try { job.process.kill('SIGTERM'); } catch {}
+    }
 
     this.activeJobs.delete(queueId);
   }

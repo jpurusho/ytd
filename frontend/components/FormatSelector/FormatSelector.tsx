@@ -244,6 +244,25 @@ export default function FormatSelector({ open, video, onClose, onDownload }: Pro
               )}
             </Box>
 
+            {/* Video scrub preview */}
+            {videoDuration > 0 && video && (
+              <Box sx={{ mb: 1.5, borderRadius: 1, overflow: 'hidden', bgcolor: '#000', position: 'relative', height: 160 }}>
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/${video.id}?start=${rangeValues[0]}&end=${rangeValues[1]}&rel=0&origin=http://localhost`}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                  allow="encrypted-media"
+                />
+                <Box sx={{ position: 'absolute', bottom: 4, left: 8, right: 8, display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="caption" sx={{ bgcolor: 'rgba(0,0,0,0.7)', color: '#fff', px: 0.75, borderRadius: 0.5, fontSize: '0.7rem' }}>
+                    Start: {secondsToHMS(rangeValues[0])}
+                  </Typography>
+                  <Typography variant="caption" sx={{ bgcolor: 'rgba(0,0,0,0.7)', color: '#fff', px: 0.75, borderRadius: 0.5, fontSize: '0.7rem' }}>
+                    End: {secondsToHMS(rangeValues[1])}
+                  </Typography>
+                </Box>
+              </Box>
+            )}
+
             {/* Range Slider */}
             {videoDuration > 0 && (
               <Box sx={{ px: 1, mb: 1 }}>
