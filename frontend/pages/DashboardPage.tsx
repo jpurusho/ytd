@@ -11,10 +11,10 @@ import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
 import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
 import YouTubePreview from '../components/YouTubePreview/YouTubePreview';
 import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
-import type { DownloadRecord, VideoInfo } from '@shared/types';
+import type { DownloadRecord, VideoInfo, LibraryItem } from '@shared/types';
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState({ totalDownloads: 0, totalSize: 0, thisWeek: 0 });
+  const [stats, setStats] = useState({ totalItems: 0, totalSize: 0, downloadedCount: 0 });
   const [recent, setRecent] = useState<DownloadRecord[]>([]);
   const [fileStatus, setFileStatus] = useState<Record<number, boolean>>({});
   const [playingRecord, setPlayingRecord] = useState<DownloadRecord | null>(null);
@@ -27,12 +27,13 @@ export default function DashboardPage() {
 
   async function loadData() {
     try {
-      const [history] = await Promise.all([
+      const [libraryStats, history] = await Promise.all([
+        window.api.library.getStats(),
         window.api.downloads.getHistory(5),
       ]);
+      setStats(libraryStats);
       setRecent(history);
 
-      // Check file existence for each record
       const statusMap: Record<number, boolean> = {};
       await Promise.all(history.map(async (r) => {
         if (r.filePath) {
@@ -42,12 +43,6 @@ export default function DashboardPage() {
         }
       }));
       setFileStatus(statusMap);
-
-      const allHistory = await window.api.downloads.getHistory(10000);
-      const totalSize = allHistory.reduce((sum, r) => sum + r.fileSize, 0);
-      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const thisWeek = allHistory.filter(r => r.downloadedAt >= weekAgo).length;
-      setStats({ totalDownloads: allHistory.length, totalSize, thisWeek });
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     }
@@ -71,8 +66,8 @@ export default function DashboardPage() {
             <Box display="flex" alignItems="center" gap={1.5}>
               <DownloadIcon color="primary" />
               <Box>
-                <Typography variant="h5" fontWeight={700}>{stats.totalDownloads}</Typography>
-                <Typography variant="caption" color="text.secondary">Total Downloads</Typography>
+                <Typography variant="h5" fontWeight={700}>{stats.totalItems}</Typography>
+                <Typography variant="caption" color="text.secondary">Library Videos</Typography>
               </Box>
             </Box>
           </Paper>
@@ -93,8 +88,8 @@ export default function DashboardPage() {
             <Box display="flex" alignItems="center" gap={1.5}>
               <TodayIcon color="success" />
               <Box>
-                <Typography variant="h5" fontWeight={700}>{stats.thisWeek}</Typography>
-                <Typography variant="caption" color="text.secondary">This Week</Typography>
+                <Typography variant="h5" fontWeight={700}>{stats.downloadedCount}</Typography>
+                <Typography variant="caption" color="text.secondary">Downloaded</Typography>
               </Box>
             </Box>
           </Paper>

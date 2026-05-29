@@ -3,7 +3,7 @@ import {
   Box, Typography, Grid, Card, CardContent, IconButton, Button,
   TextField, Dialog, DialogTitle, DialogContent, DialogActions,
   Chip, Alert, CircularProgress, List, ListItem, ListItemText,
-  ListItemAvatar, Avatar, ListItemSecondaryAction,
+  ListItemAvatar, Avatar, ListItemSecondaryAction, Checkbox,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -41,6 +41,7 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadPlaylists();
@@ -72,6 +73,7 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
 
   async function openPlaylist(pl: LocalPlaylist) {
     setSelectedPlaylist(pl);
+    setSelectedItems(new Set());
     const items = await window.api.playlists.getItems(pl.id);
     setPlaylistItems(items);
   }
@@ -108,6 +110,17 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
     await window.api.playlists.removeItem(selectedPlaylist.id, videoId);
     const items = await window.api.playlists.getItems(selectedPlaylist.id);
     setPlaylistItems(items);
+    setSelectedItems(prev => { const next = new Set(prev); next.delete(videoId); return next; });
+  }
+
+  async function handleBulkRemove() {
+    if (!selectedPlaylist || selectedItems.size === 0) return;
+    for (const videoId of selectedItems) {
+      await window.api.playlists.removeItem(selectedPlaylist.id, videoId);
+    }
+    const items = await window.api.playlists.getItems(selectedPlaylist.id);
+    setPlaylistItems(items);
+    setSelectedItems(new Set());
   }
 
   async function handleSync(pl: LocalPlaylist) {
@@ -263,9 +276,16 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
           </Alert>
         )}
 
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-          {playlistItems.length} videos
-        </Typography>
+        <Box display="flex" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+          <Typography variant="subtitle2" color="text.secondary">
+            {playlistItems.length} videos
+          </Typography>
+          {selectedItems.size > 0 && (
+            <Button size="small" color="error" variant="outlined" startIcon={<RemoveCircleOutlineIcon />} onClick={handleBulkRemove}>
+              Remove {selectedItems.size} from playlist
+            </Button>
+          )}
+        </Box>
 
         {playlistItems.length === 0 ? (
           <Box textAlign="center" py={4}>
@@ -280,6 +300,17 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
                 key={item.videoId}
                 sx={{ px: 1, py: 0.75, borderRadius: 1, '&:hover': { bgcolor: 'action.hover' } }}
               >
+                <Checkbox
+                  size="small"
+                  checked={selectedItems.has(item.videoId)}
+                  onChange={() => {
+                    const next = new Set(selectedItems);
+                    if (next.has(item.videoId)) next.delete(item.videoId);
+                    else next.add(item.videoId);
+                    setSelectedItems(next);
+                  }}
+                  sx={{ mr: 0.5 }}
+                />
                 <Box sx={{ mr: 1, color: 'text.secondary', cursor: 'grab' }}>
                   <DragIndicatorIcon fontSize="small" />
                 </Box>
