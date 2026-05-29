@@ -7,6 +7,7 @@ import Browse from './Browse';
 import Playlists from './Playlists';
 import Downloads from './Downloads';
 import History from './History';
+import Library from './Library';
 import Settings from './Settings';
 import type { UserInfo, DownloadRequest } from '@shared/types';
 
@@ -56,6 +57,7 @@ export default function Dashboard({ user, onLogout }: Props) {
       case 'browse': return <Browse onDownload={handleDownload} />;
       case 'playlists': return <Playlists onDownload={handleDownload} openPlaylistId={selectedPlaylistId} onPlaylistOpened={() => setSelectedPlaylistId(null)} />;
       case 'downloads': return <Downloads />;
+      case 'library': return <Library />;
       case 'history': return <History />;
       case 'settings': return <Settings />;
     }
