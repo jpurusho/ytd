@@ -47,6 +47,13 @@ const api: ElectronAPI = {
       return () => ipcRenderer.removeListener('download:error', handler);
     },
   },
+  library: {
+    getAll: (opts?: any) => ipcRenderer.invoke('library:getAll', opts),
+    get: (videoId: string) => ipcRenderer.invoke('library:get', videoId),
+    delete: (videoIds: string[], deleteFiles?: boolean) => ipcRenderer.invoke('library:delete', videoIds, deleteFiles),
+    getRecent: (limit: number) => ipcRenderer.invoke('library:getRecent', limit),
+    getStats: () => ipcRenderer.invoke('library:getStats'),
+  },
   playlists: {
     create: (name: string, description?: string) => ipcRenderer.invoke('playlists:create', name, description),
     getAll: () => ipcRenderer.invoke('playlists:getAll'),

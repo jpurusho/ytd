@@ -13,6 +13,8 @@ import {
   updateDownloadFilePath,
   createLocalPlaylist, getLocalPlaylists, getLocalPlaylist, updateLocalPlaylist, deleteLocalPlaylist,
   addPlaylistItem, removePlaylistItem, getPlaylistItems, reorderPlaylistItem,
+  getLibraryItems, getLibraryItem, deleteLibraryItems, getRecentLibraryItems, getLibraryStats,
+  upsertLibraryItem,
 } from './services/database';
 import type { DownloadRequest, LocalPlaylistVideoItem } from '../shared/types';
 
@@ -180,6 +182,28 @@ export function registerIpcHandlers(): void {
     }
 
     return { updated, stillMissing };
+  });
+
+  // ─── Library ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle('library:getAll', (_event, opts?: any) => {
+    return getLibraryItems(opts);
+  });
+
+  ipcMain.handle('library:get', (_event, videoId: string) => {
+    return getLibraryItem(videoId);
+  });
+
+  ipcMain.handle('library:delete', (_event, videoIds: string[], deleteFiles?: boolean) => {
+    deleteLibraryItems(videoIds, deleteFiles);
+  });
+
+  ipcMain.handle('library:getRecent', (_event, limit: number) => {
+    return getRecentLibraryItems(limit);
+  });
+
+  ipcMain.handle('library:getStats', () => {
+    return getLibraryStats();
   });
 
   // ─── App ────────────────────────────────────────────────────────────────────

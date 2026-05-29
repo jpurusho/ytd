@@ -155,6 +155,25 @@ export interface LocalPlaylistItem {
   addedAt: string;
 }
 
+export interface LibraryItem {
+  videoId: string;
+  title: string;
+  channel: string;
+  channelId?: string;
+  thumbnailUrl?: string;
+  url: string;
+  format?: string;
+  quality?: string;
+  resolution?: string;
+  filePath: string | null;
+  fileSize: number;
+  duration: number;
+  publishedAt?: string;
+  downloadedAt?: string;
+  addedAt: string;
+  updatedAt: string;
+}
+
 export interface LocalPlaylistVideoItem {
   videoId: string;
   title: string;
@@ -210,6 +229,13 @@ export interface ElectronAPI {
     onProgress: (callback: (progress: DownloadProgress) => void) => () => void;
     onComplete: (callback: (record: DownloadRecord) => void) => () => void;
     onError: (callback: (data: { queueId: number; error: string }) => void) => () => void;
+  };
+  library: {
+    getAll: (opts?: { limit?: number; offset?: number; search?: string; sort?: string; order?: 'asc' | 'desc' }) => Promise<LibraryItem[]>;
+    get: (videoId: string) => Promise<LibraryItem | null>;
+    delete: (videoIds: string[], deleteFiles?: boolean) => Promise<void>;
+    getRecent: (limit: number) => Promise<LibraryItem[]>;
+    getStats: () => Promise<{ totalItems: number; totalSize: number; downloadedCount: number }>;
   };
   playlists: {
     create: (name: string, description?: string) => Promise<LocalPlaylist>;

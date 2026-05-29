@@ -3,7 +3,7 @@ import { DownloadEngine } from './download-engine';
 import {
   addToQueue, getQueue, getQueueItem, updateQueueItem, deleteQueueItem,
   getPendingQueueItems, getActiveQueueItems, addDownloadRecord, getSetting,
-  clearFailedQueue,
+  clearFailedQueue, upsertLibraryItem, toRelativePath,
 } from './database';
 import type { QueueItem, DownloadRequest, DownloadProgress, DownloadRecord } from '../../shared/types';
 
@@ -139,6 +139,21 @@ export class QueueManager {
     });
 
     const record = addDownloadRecord(item, filePath, fileSize);
+
+    upsertLibraryItem({
+      videoId: item.videoId,
+      title: item.title,
+      channel: item.channel,
+      thumbnailUrl: item.thumbnailUrl,
+      url: item.url,
+      format: item.format,
+      quality: item.quality,
+      resolution: item.resolution,
+      filePath: toRelativePath(filePath),
+      fileSize,
+      downloadedAt: new Date().toISOString(),
+    });
+
     this.sendToRenderer('download:complete', record);
     this.sendQueueUpdate();
     this.processNext();

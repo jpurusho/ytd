@@ -3,7 +3,7 @@ import { app } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import type { AuthTokens, UserInfo, QueueItem, DownloadRecord, DownloadRequest } from '../../shared/types';
+import type { AuthTokens, UserInfo, QueueItem, DownloadRecord, DownloadRequest, LibraryItem } from '../../shared/types';
 
 let db: Database.Database;
 
@@ -155,6 +155,25 @@ export function initDatabase(): void {
       FOREIGN KEY (playlist_id) REFERENCES local_playlists(id) ON DELETE CASCADE,
       UNIQUE(playlist_id, video_id)
     );
+
+    CREATE TABLE IF NOT EXISTS library (
+      video_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      channel TEXT,
+      channel_id TEXT,
+      thumbnail_url TEXT,
+      url TEXT NOT NULL,
+      format TEXT,
+      quality TEXT,
+      resolution TEXT,
+      file_path TEXT,
+      file_size INTEGER DEFAULT 0,
+      duration INTEGER DEFAULT 0,
+      published_at TEXT,
+      downloaded_at TEXT,
+      added_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Migration: add published_at if missing
@@ -163,6 +182,62 @@ export function initDatabase(): void {
   if (!playlistItemColNames.has('published_at')) {
     db.exec('ALTER TABLE local_playlist_items ADD COLUMN published_at TEXT');
   }
+
+  runMigrations();
+}
+
+function runMigrations(): void {
+  const version = getSetting('schema_version');
+  const currentVersion = parseInt(version || '1', 10);
+
+  if (currentVersion < 2) {
+    migrateToV2();
+  }
+}
+
+function migrateToV2(): void {
+  console.log('[db] Running migration to schema v2 (library table)...');
+
+  const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
+
+  const migrate = db.transaction(() => {
+    // 1. Populate library from downloads (dedup: keep most recent per video_id)
+    db.exec(`
+      INSERT OR IGNORE INTO library (video_id, title, channel, channel_id, thumbnail_url, url, format, quality, resolution, file_path, file_size, duration, downloaded_at, added_at, updated_at)
+      SELECT video_id, title, channel, channel_id, thumbnail_url, url, format, quality, resolution, file_path, file_size, duration, downloaded_at, downloaded_at, downloaded_at
+      FROM downloads
+      WHERE id IN (
+        SELECT id FROM downloads d1
+        WHERE d1.id = (SELECT MAX(d2.id) FROM downloads d2 WHERE d2.video_id = d1.video_id)
+      )
+    `);
+
+    // 2. Populate library from playlist items not already there
+    db.exec(`
+      INSERT OR IGNORE INTO library (video_id, title, channel, thumbnail_url, url, duration, published_at, added_at, updated_at)
+      SELECT video_id, title, channel, thumbnail_url,
+             'https://www.youtube.com/watch?v=' || video_id,
+             duration, published_at, added_at, added_at
+      FROM local_playlist_items
+      WHERE video_id NOT IN (SELECT video_id FROM library)
+    `);
+
+    // 3. Convert absolute paths to relative in library
+    const items = db.prepare('SELECT video_id, file_path FROM library WHERE file_path IS NOT NULL').all() as any[];
+    const updatePath = db.prepare('UPDATE library SET file_path = ? WHERE video_id = ?');
+    for (const item of items) {
+      if (item.file_path && item.file_path.startsWith(outputDir)) {
+        const relative = item.file_path.slice(outputDir.length).replace(/^[\/\\]/, '');
+        updatePath.run(relative, item.video_id);
+      }
+    }
+
+    // 4. Set schema version
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('schema_version', '2', datetime('now'))").run();
+  });
+
+  migrate();
+  console.log('[db] Migration to schema v2 complete.');
 }
 
 export function getDb(): Database.Database {
@@ -515,5 +590,168 @@ function rowToDownloadRecord(row: any): DownloadRecord {
     status: row.status,
     error: row.error ?? undefined,
     downloadedAt: row.downloaded_at,
+  };
+}
+
+// ─── Path helpers ──────────────────────────────────────────────────────────
+
+export function resolveFilePath(relativePath: string | null): string | null {
+  if (!relativePath) return null;
+  if (path.isAbsolute(relativePath)) return relativePath;
+  const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
+  return path.join(outputDir, relativePath);
+}
+
+export function toRelativePath(absolutePath: string): string {
+  const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
+  const normalized = absolutePath.replace(/\\/g, '/');
+  const normalizedDir = outputDir.replace(/\\/g, '/').replace(/\/$/, '') + '/';
+  if (normalized.startsWith(normalizedDir)) {
+    return normalized.slice(normalizedDir.length);
+  }
+  return absolutePath;
+}
+
+// ─── Library helpers ──────────────────────────────────────────────────────
+
+export function upsertLibraryItem(item: {
+  videoId: string;
+  title: string;
+  channel?: string;
+  channelId?: string;
+  thumbnailUrl?: string;
+  url: string;
+  format?: string;
+  quality?: string;
+  resolution?: string;
+  filePath?: string | null;
+  fileSize?: number;
+  duration?: number;
+  publishedAt?: string;
+  downloadedAt?: string;
+}): void {
+  db.prepare(`
+    INSERT INTO library (video_id, title, channel, channel_id, thumbnail_url, url, format, quality, resolution, file_path, file_size, duration, published_at, downloaded_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(video_id) DO UPDATE SET
+      title = COALESCE(excluded.title, title),
+      channel = COALESCE(excluded.channel, channel),
+      channel_id = COALESCE(excluded.channel_id, channel_id),
+      thumbnail_url = COALESCE(excluded.thumbnail_url, thumbnail_url),
+      format = COALESCE(excluded.format, format),
+      quality = COALESCE(excluded.quality, quality),
+      resolution = COALESCE(excluded.resolution, resolution),
+      file_path = COALESCE(excluded.file_path, file_path),
+      file_size = CASE WHEN excluded.file_size > 0 THEN excluded.file_size ELSE file_size END,
+      duration = CASE WHEN excluded.duration > 0 THEN excluded.duration ELSE duration END,
+      downloaded_at = COALESCE(excluded.downloaded_at, downloaded_at),
+      updated_at = datetime('now')
+  `).run(
+    item.videoId, item.title, item.channel ?? null, item.channelId ?? null,
+    item.thumbnailUrl ?? null, item.url, item.format ?? null, item.quality ?? null,
+    item.resolution ?? null, item.filePath ?? null, item.fileSize ?? 0,
+    item.duration ?? 0, item.publishedAt ?? null, item.downloadedAt ?? null
+  );
+}
+
+export function getLibraryItem(videoId: string): LibraryItem | null {
+  const row = db.prepare('SELECT * FROM library WHERE video_id = ?').get(videoId) as any;
+  return row ? rowToLibraryItem(row) : null;
+}
+
+export function getLibraryItems(opts?: { limit?: number; offset?: number; search?: string; sort?: string; order?: 'asc' | 'desc' }): LibraryItem[] {
+  const limit = opts?.limit || 500;
+  const offset = opts?.offset || 0;
+  const sort = opts?.sort || 'updated_at';
+  const order = opts?.order || 'desc';
+
+  const validSorts = ['title', 'channel', 'format', 'file_size', 'resolution', 'downloaded_at', 'added_at', 'updated_at'];
+  const sortCol = validSorts.includes(sort) ? sort : 'updated_at';
+  const sortOrder = order === 'asc' ? 'ASC' : 'DESC';
+
+  let query = `SELECT * FROM library`;
+  const params: any[] = [];
+
+  if (opts?.search) {
+    query += ` WHERE title LIKE ? OR channel LIKE ?`;
+    const term = `%${opts.search}%`;
+    params.push(term, term);
+  }
+
+  query += ` ORDER BY ${sortCol} ${sortOrder} LIMIT ? OFFSET ?`;
+  params.push(limit, offset);
+
+  const rows = db.prepare(query).all(...params) as any[];
+  return rows.map(rowToLibraryItem);
+}
+
+export function getRecentLibraryItems(limit: number = 10): LibraryItem[] {
+  const rows = db.prepare('SELECT * FROM library WHERE downloaded_at IS NOT NULL ORDER BY downloaded_at DESC LIMIT ?').all(limit) as any[];
+  return rows.map(rowToLibraryItem);
+}
+
+export function deleteLibraryItems(videoIds: string[], deleteFiles: boolean = false): void {
+  if (videoIds.length === 0) return;
+
+  if (deleteFiles) {
+    const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
+    for (const videoId of videoIds) {
+      const item = db.prepare('SELECT file_path FROM library WHERE video_id = ?').get(videoId) as any;
+      if (item?.file_path) {
+        const absolute = path.isAbsolute(item.file_path) ? item.file_path : path.join(outputDir, item.file_path);
+        try { if (fs.existsSync(absolute)) fs.unlinkSync(absolute); } catch {}
+      }
+    }
+  }
+
+  const placeholders = videoIds.map(() => '?').join(',');
+  // CASCADE will handle local_playlist_items FK references
+  db.prepare(`DELETE FROM library WHERE video_id IN (${placeholders})`).run(...videoIds);
+}
+
+export function getLibraryStats(): { totalItems: number; totalSize: number; downloadedCount: number } {
+  const total = db.prepare('SELECT COUNT(*) as count, COALESCE(SUM(file_size), 0) as size FROM library').get() as any;
+  const downloaded = db.prepare('SELECT COUNT(*) as count FROM library WHERE downloaded_at IS NOT NULL').get() as any;
+  return {
+    totalItems: total.count,
+    totalSize: total.size,
+    downloadedCount: downloaded.count,
+  };
+}
+
+export function getPlaylistItemsWithLibrary(playlistId: number): LocalPlaylistItemRow[] {
+  const rows = db.prepare(`
+    SELECT pi.id, pi.playlist_id, pi.video_id, pi.position, pi.added_at,
+           COALESCE(l.title, pi.title) as title,
+           COALESCE(l.channel, pi.channel) as channel,
+           COALESCE(l.thumbnail_url, pi.thumbnail_url) as thumbnail_url,
+           COALESCE(l.duration, pi.duration) as duration,
+           COALESCE(l.published_at, pi.published_at) as published_at
+    FROM local_playlist_items pi
+    LEFT JOIN library l ON l.video_id = pi.video_id
+    WHERE pi.playlist_id = ?
+    ORDER BY pi.position ASC
+  `).all(playlistId) as any[];
+  return rows.map(rowToPlaylistItem);
+}
+
+function rowToLibraryItem(row: any): LibraryItem {
+  return {
+    videoId: row.video_id,
+    title: row.title,
+    channel: row.channel || '',
+    channelId: row.channel_id ?? undefined,
+    thumbnailUrl: row.thumbnail_url ?? undefined,
+    url: row.url,
+    format: row.format ?? undefined,
+    quality: row.quality ?? undefined,
+    resolution: row.resolution ?? undefined,
+    filePath: resolveFilePath(row.file_path),
+    fileSize: row.file_size || 0,
+    duration: row.duration || 0,
+    publishedAt: row.published_at ?? undefined,
+    downloadedAt: row.downloaded_at ?? undefined,
+    addedAt: row.added_at,
+    updatedAt: row.updated_at,
   };
 }
