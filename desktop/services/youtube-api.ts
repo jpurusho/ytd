@@ -135,27 +135,28 @@ export class YouTubeApiService {
     return items;
   }
 
-  async getChannelVideos(channelId: string, maxResults: number = 20): Promise<VideoInfo[]> {
+  async getChannelVideos(channelId: string, maxResults: number = 50, pageToken?: string): Promise<{ videos: VideoInfo[]; nextPageToken?: string }> {
     const response = await this.youtube.search.list({
       part: ['snippet'],
       channelId,
       type: ['video'],
       order: 'date',
       maxResults,
+      pageToken: pageToken || undefined,
     });
 
     const videoIds = (response.data.items || [])
       .map(item => item.id?.videoId)
       .filter((id): id is string => !!id);
 
-    if (videoIds.length === 0) return [];
+    if (videoIds.length === 0) return { videos: [], nextPageToken: undefined };
 
     const detailsResponse = await this.youtube.videos.list({
       part: ['snippet', 'contentDetails', 'statistics'],
       id: videoIds,
     });
 
-    return (detailsResponse.data.items || []).map(item => ({
+    const videos = (detailsResponse.data.items || []).map(item => ({
       id: item.id || '',
       title: item.snippet?.title || '',
       channel: item.snippet?.channelTitle || '',
@@ -164,6 +165,24 @@ export class YouTubeApiService {
       duration: parseDuration(item.contentDetails?.duration || ''),
       publishedAt: item.snippet?.publishedAt || '',
       viewCount: parseInt(item.statistics?.viewCount || '0', 10),
+      description: item.snippet?.description || '',
+    }));
+
+    return { videos, nextPageToken: response.data.nextPageToken || undefined };
+  }
+
+  async searchChannels(query: string, maxResults: number = 10): Promise<SubscriptionInfo[]> {
+    const response = await this.youtube.search.list({
+      part: ['snippet'],
+      q: query,
+      type: ['channel'],
+      maxResults,
+    });
+
+    return (response.data.items || []).map(item => ({
+      channelId: item.snippet?.channelId || item.id?.channelId || '',
+      channelTitle: item.snippet?.channelTitle || item.snippet?.title || '',
+      thumbnail: item.snippet?.thumbnails?.default?.url || '',
       description: item.snippet?.description || '',
     }));
   }

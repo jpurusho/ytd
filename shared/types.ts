@@ -210,7 +210,8 @@ export interface ElectronAPI {
     getPlaylists: () => Promise<PlaylistInfo[]>;
     getPlaylistItems: (playlistId: string, maxResults?: number) => Promise<PlaylistItem[]>;
     getSubscriptions: (maxResults?: number) => Promise<SubscriptionInfo[]>;
-    getChannelVideos: (channelId: string, maxResults?: number) => Promise<VideoInfo[]>;
+    getChannelVideos: (channelId: string, maxResults?: number, pageToken?: string) => Promise<{ videos: VideoInfo[]; nextPageToken?: string }>;
+    searchChannels: (query: string, maxResults?: number) => Promise<SubscriptionInfo[]>;
     getVideoInfo: (videoId: string) => Promise<VideoInfo>;
     getFormats: (url: string) => Promise<FormatInfo[]>;
   };

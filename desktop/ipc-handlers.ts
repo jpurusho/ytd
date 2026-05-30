@@ -81,12 +81,16 @@ export function registerIpcHandlers(): void {
     return getYouTubeService().getSubscriptions(maxResults);
   });
 
-  ipcMain.handle('youtube:getChannelVideos', async (_event, channelId: string, maxResults?: number) => {
-    return getYouTubeService().getChannelVideos(channelId, maxResults);
+  ipcMain.handle('youtube:getChannelVideos', async (_event, channelId: string, maxResults?: number, pageToken?: string) => {
+    return getYouTubeService().getChannelVideos(channelId, maxResults, pageToken);
   });
 
   ipcMain.handle('youtube:getVideoInfo', async (_event, videoId: string) => {
     return getYouTubeService().getVideoInfo(videoId);
+  });
+
+  ipcMain.handle('youtube:searchChannels', async (_event, query: string, maxResults?: number) => {
+    return getYouTubeService().searchChannels(query, maxResults);
   });
 
   ipcMain.handle('youtube:getFormats', async (_event, url: string) => {
