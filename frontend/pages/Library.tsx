@@ -3,7 +3,7 @@ import {
   Box, Typography, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, IconButton, Button, TextField, InputAdornment,
   Chip, Checkbox, TableSortLabel, Dialog, DialogTitle, DialogContent,
-  DialogActions, FormControlLabel,
+  DialogActions, FormControlLabel, Menu, MenuItem, ListItemIcon, ListItemText,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -12,6 +12,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
 import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
 import type { LibraryItem, DownloadRecord, VideoInfo } from '@shared/types';
@@ -30,6 +31,8 @@ export default function Library() {
   const [addToPlaylistVideo, setAddToPlaylistVideo] = useState<VideoInfo | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteFiles, setDeleteFiles] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [menuItem, setMenuItem] = useState<LibraryItem | null>(null);
 
   useEffect(() => {
     loadLibrary();
@@ -248,44 +251,14 @@ export default function Library() {
                   <TableCell>
                     <Typography variant="body2" color="text.secondary">{formatDate(item.downloadedAt)}</Typography>
                   </TableCell>
-                  <TableCell align="right">
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                     {item.filePath && (
-                      <>
-                        <IconButton size="small" onClick={() => setPlayingItem(item)} title="Play">
-                          <PlayArrowIcon fontSize="small" />
-                        </IconButton>
-                        {item.format && item.format !== 'mp4' && item.format !== 'mp3' && (
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            disabled={converting.has(item.videoId)}
-                            onClick={async () => {
-                              if (!item.filePath) return;
-                              setConverting(prev => new Set(prev).add(item.videoId));
-                              const result = await window.api.app.convertToMp4(item.filePath);
-                              setConverting(prev => { const next = new Set(prev); next.delete(item.videoId); return next; });
-                              if (result.success && result.outputPath) {
-                                window.api.app.showInFinder(result.outputPath);
-                              }
-                            }}
-                            title="Convert to MP4"
-                          >
-                            <SwapHorizIcon fontSize="small" />
-                          </IconButton>
-                        )}
-                        <IconButton size="small" onClick={() => openInFinder(item.filePath!)} title="Show in Finder">
-                          <FolderOpenIcon fontSize="small" />
-                        </IconButton>
-                      </>
+                      <IconButton size="small" onClick={() => setPlayingItem(item)} title="Play">
+                        <PlayArrowIcon fontSize="small" />
+                      </IconButton>
                     )}
-                    <IconButton size="small" onClick={() => setAddToPlaylistVideo({ id: item.videoId, title: item.title, channel: item.channel, channelId: '', thumbnail: item.thumbnailUrl || '', duration: item.duration, publishedAt: item.downloadedAt || '', viewCount: 0, description: '' })} title="Add to playlist">
-                      <PlaylistAddIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" onClick={() => openInYouTube(item.videoId)} title="Open on YouTube">
-                      <OpenInNewIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" onClick={() => { setSelected(new Set([item.videoId])); setDeleteDialogOpen(true); }} title="Remove from library">
-                      <DeleteIcon fontSize="small" />
+                    <IconButton size="small" onClick={(e) => { setMenuAnchor(e.currentTarget); setMenuItem(item); }}>
+                      <MoreVertIcon fontSize="small" />
                     </IconButton>
                   </TableCell>
                 </TableRow>
@@ -306,6 +279,46 @@ export default function Library() {
         videos={addToPlaylistVideo ? [addToPlaylistVideo] : []}
         onClose={() => setAddToPlaylistVideo(null)}
       />
+
+      <Menu
+        anchorEl={menuAnchor}
+        open={!!menuAnchor}
+        onClose={() => { setMenuAnchor(null); setMenuItem(null); }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        {menuItem?.filePath && (
+          <MenuItem onClick={() => { openInFinder(menuItem!.filePath!); setMenuAnchor(null); }}>
+            <ListItemIcon><FolderOpenIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Show in Finder</ListItemText>
+          </MenuItem>
+        )}
+        {menuItem?.filePath && menuItem.format && menuItem.format !== 'mp4' && menuItem.format !== 'mp3' && (
+          <MenuItem onClick={async () => {
+            if (!menuItem?.filePath) return;
+            setMenuAnchor(null);
+            setConverting(prev => new Set(prev).add(menuItem.videoId));
+            const result = await window.api.app.convertToMp4(menuItem.filePath);
+            setConverting(prev => { const next = new Set(prev); next.delete(menuItem.videoId); return next; });
+            if (result.success && result.outputPath) window.api.app.showInFinder(result.outputPath);
+          }}>
+            <ListItemIcon><SwapHorizIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Convert to MP4</ListItemText>
+          </MenuItem>
+        )}
+        <MenuItem onClick={() => { if (menuItem) setAddToPlaylistVideo({ id: menuItem.videoId, title: menuItem.title, channel: menuItem.channel, channelId: '', thumbnail: menuItem.thumbnailUrl || '', duration: menuItem.duration, publishedAt: menuItem.downloadedAt || '', viewCount: 0, description: '' }); setMenuAnchor(null); }}>
+          <ListItemIcon><PlaylistAddIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Add to Playlist</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => { if (menuItem) openInYouTube(menuItem.videoId); setMenuAnchor(null); }}>
+          <ListItemIcon><OpenInNewIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Open on YouTube</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => { if (menuItem) { setSelected(new Set([menuItem.videoId])); setDeleteDialogOpen(true); } setMenuAnchor(null); }}>
+          <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+          <ListItemText sx={{ color: 'error.main' }}>Delete</ListItemText>
+        </MenuItem>
+      </Menu>
 
       <Dialog open={deleteDialogOpen} onClose={() => { setDeleteDialogOpen(false); setDeleteFiles(false); }}>
         <DialogTitle>Delete from Library</DialogTitle>
