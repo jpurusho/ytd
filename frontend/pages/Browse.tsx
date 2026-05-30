@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Tabs, Tab, Typography, Grid, Card, CardMedia, CardContent,
-  CircularProgress, TextField, Button, Alert, Chip,
+  CircularProgress, TextField, Button, Alert, Chip, InputAdornment,
 } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
 import VideoCard from '../components/VideoCard/VideoCard';
 import FormatSelector from '../components/FormatSelector/FormatSelector';
 import YouTubePreview from '../components/YouTubePreview/YouTubePreview';
@@ -28,6 +29,8 @@ export default function Browse({ onDownload }: Props) {
   const [selectedVideo, setSelectedVideo] = useState<VideoInfo | null>(null);
   const [previewVideo, setPreviewVideo] = useState<VideoInfo | null>(null);
   const [addToPlaylistVideo, setAddToPlaylistVideo] = useState<VideoInfo | null>(null);
+  const [playlistFilter, setPlaylistFilter] = useState('');
+  const [subscriptionFilter, setSubscriptionFilter] = useState('');
 
   useEffect(() => {
     if (tab === 0 && playlists.length === 0) loadPlaylists();
@@ -125,28 +128,43 @@ export default function Browse({ onDownload }: Props) {
 
       {/* Playlists Tab */}
       {tab === 0 && !loading && !selectedPlaylist && (
-        <Grid container spacing={2}>
-          {playlists.map((pl) => (
-            <Grid item xs={12} sm={6} md={4} key={pl.id}>
-              <Card
-                sx={{ cursor: 'pointer', borderRadius: 2, border: '1px solid', borderColor: 'divider', '&:hover': { borderColor: 'primary.main' } }}
-                elevation={0}
-                onClick={() => openPlaylist(pl)}
-              >
-                <CardMedia component="img" height={120} image={pl.thumbnail} alt={pl.title} />
-                <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                  <Typography variant="body2" fontWeight={500} noWrap>{pl.title}</Typography>
-                  <Typography variant="caption" color="text.secondary">{pl.itemCount} videos</Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-          {playlists.length === 0 && (
-            <Grid item xs={12}>
-              <Typography color="text.secondary" textAlign="center">No playlists found</Typography>
-            </Grid>
+        <Box>
+          {playlists.length > 0 && (
+            <TextField
+              value={playlistFilter}
+              onChange={(e) => setPlaylistFilter(e.target.value)}
+              placeholder="Filter playlists..."
+              size="small"
+              fullWidth
+              sx={{ mb: 2 }}
+              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
+            />
           )}
-        </Grid>
+          <Grid container spacing={2}>
+            {playlists
+              .filter(pl => !playlistFilter || pl.title.toLowerCase().includes(playlistFilter.toLowerCase()))
+              .map((pl) => (
+              <Grid item xs={12} sm={6} md={4} key={pl.id}>
+                <Card
+                  sx={{ cursor: 'pointer', borderRadius: 2, border: '1px solid', borderColor: 'divider', '&:hover': { borderColor: 'primary.main' } }}
+                  elevation={0}
+                  onClick={() => openPlaylist(pl)}
+                >
+                  <CardMedia component="img" height={120} image={pl.thumbnail} alt={pl.title} />
+                  <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                    <Typography variant="body2" fontWeight={500} noWrap>{pl.title}</Typography>
+                    <Typography variant="caption" color="text.secondary">{pl.itemCount} videos</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+            {playlists.length === 0 && (
+              <Grid item xs={12}>
+                <Typography color="text.secondary" textAlign="center">No playlists found</Typography>
+              </Grid>
+            )}
+          </Grid>
+        </Box>
       )}
 
       {/* Playlist Items */}
@@ -157,8 +175,21 @@ export default function Browse({ onDownload }: Props) {
             <Typography variant="h6">{selectedPlaylist.title}</Typography>
             <Chip label={`${playlistItems.length} videos`} size="small" />
           </Box>
+          {playlistItems.length > 5 && (
+            <TextField
+              value={playlistFilter}
+              onChange={(e) => setPlaylistFilter(e.target.value)}
+              placeholder="Filter videos..."
+              size="small"
+              fullWidth
+              sx={{ mb: 2 }}
+              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
+            />
+          )}
           <Grid container spacing={2}>
-            {playlistItems.map((item) => {
+            {playlistItems
+              .filter(item => !playlistFilter || item.title.toLowerCase().includes(playlistFilter.toLowerCase()) || item.channel.toLowerCase().includes(playlistFilter.toLowerCase()))
+              .map((item) => {
               const videoInfo: VideoInfo = {
                 id: item.videoId,
                 title: item.title,
@@ -182,25 +213,40 @@ export default function Browse({ onDownload }: Props) {
 
       {/* Subscriptions Tab */}
       {tab === 1 && !loading && !selectedChannel && (
-        <Grid container spacing={2}>
-          {subscriptions.map((sub) => (
-            <Grid item xs={12} sm={6} md={4} lg={3} key={sub.channelId}>
-              <Card
-                sx={{ cursor: 'pointer', borderRadius: 2, border: '1px solid', borderColor: 'divider', '&:hover': { borderColor: 'primary.main' } }}
-                elevation={0}
-                onClick={() => openChannel(sub)}
-              >
-                <Box display="flex" alignItems="center" gap={1.5} p={1.5}>
-                  <img src={sub.thumbnail} alt="" style={{ width: 48, height: 48, borderRadius: '50%' }} />
-                  <Box overflow="hidden">
-                    <Typography variant="body2" fontWeight={500} noWrap>{sub.channelTitle}</Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap>{sub.description}</Typography>
+        <Box>
+          {subscriptions.length > 0 && (
+            <TextField
+              value={subscriptionFilter}
+              onChange={(e) => setSubscriptionFilter(e.target.value)}
+              placeholder="Filter subscriptions..."
+              size="small"
+              fullWidth
+              sx={{ mb: 2 }}
+              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
+            />
+          )}
+          <Grid container spacing={2}>
+            {subscriptions
+              .filter(sub => !subscriptionFilter || sub.channelTitle.toLowerCase().includes(subscriptionFilter.toLowerCase()))
+              .map((sub) => (
+              <Grid item xs={12} sm={6} md={4} lg={3} key={sub.channelId}>
+                <Card
+                  sx={{ cursor: 'pointer', borderRadius: 2, border: '1px solid', borderColor: 'divider', '&:hover': { borderColor: 'primary.main' } }}
+                  elevation={0}
+                  onClick={() => openChannel(sub)}
+                >
+                  <Box display="flex" alignItems="center" gap={1.5} p={1.5}>
+                    <img src={sub.thumbnail} alt="" style={{ width: 48, height: 48, borderRadius: '50%' }} />
+                    <Box overflow="hidden">
+                      <Typography variant="body2" fontWeight={500} noWrap>{sub.channelTitle}</Typography>
+                      <Typography variant="caption" color="text.secondary" noWrap>{sub.description}</Typography>
+                    </Box>
                   </Box>
-                </Box>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
       )}
 
       {/* Channel Videos */}
