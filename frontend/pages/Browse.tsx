@@ -268,24 +268,29 @@ export default function Browse({ onDownload }: Props) {
       {/* Subscriptions Tab */}
       {tab === 1 && !loading && !selectedChannel && (
         <Box>
-          <Box display="flex" gap={1} mb={2}>
-            <TextField
-              value={channelSearch}
-              onChange={(e) => setChannelSearch(e.target.value)}
-              placeholder="Search for a channel..."
-              size="small"
-              fullWidth
-              onKeyDown={(e) => { if (e.key === 'Enter') handleChannelSearch(); }}
-              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
-            />
-            <Button variant="contained" size="small" onClick={handleChannelSearch} sx={{ whiteSpace: 'nowrap' }}>
-              Search
-            </Button>
-          </Box>
+          <TextField
+            value={channelSearch}
+            onChange={(e) => { setChannelSearch(e.target.value); setSubscriptionFilter(e.target.value); }}
+            placeholder="Search channels or filter subscriptions..."
+            size="small"
+            fullWidth
+            sx={{ mb: 2 }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleChannelSearch(); }}
+            InputProps={{
+              startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+              endAdornment: channelSearch && (
+                <InputAdornment position="end">
+                  <Button size="small" onClick={handleChannelSearch} sx={{ minWidth: 'auto', fontSize: '0.75rem' }}>
+                    Search YouTube
+                  </Button>
+                </InputAdornment>
+              ),
+            }}
+          />
 
           {channelSearchResults.length > 0 && (
             <Box mb={3}>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>Search Results</Typography>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>YouTube Results</Typography>
               <Grid container spacing={2}>
                 {channelSearchResults.map((sub) => (
                   <Grid item xs={12} sm={6} md={4} lg={3} key={sub.channelId}>
@@ -309,18 +314,9 @@ export default function Browse({ onDownload }: Props) {
           )}
 
           {subscriptions.length > 0 && (
-            <>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>Your Subscriptions</Typography>
-              <TextField
-                value={subscriptionFilter}
-                onChange={(e) => setSubscriptionFilter(e.target.value)}
-                placeholder="Filter subscriptions..."
-                size="small"
-                fullWidth
-                sx={{ mb: 2 }}
-                InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
-              />
-            </>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+              Your Subscriptions {subscriptionFilter && `(filtered)`}
+            </Typography>
           )}
           <Grid container spacing={2}>
             {subscriptions
