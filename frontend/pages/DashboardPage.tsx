@@ -15,8 +15,8 @@ import type { DownloadRecord, VideoInfo, LibraryItem } from '@shared/types';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({ totalItems: 0, totalSize: 0, downloadedCount: 0 });
-  const [recent, setRecent] = useState<DownloadRecord[]>([]);
-  const [fileStatus, setFileStatus] = useState<Record<number, boolean>>({});
+  const [recent, setRecent] = useState<LibraryItem[]>([]);
+  const [fileStatus, setFileStatus] = useState<Record<string, boolean>>({});
   const [playingRecord, setPlayingRecord] = useState<DownloadRecord | null>(null);
   const [previewVideo, setPreviewVideo] = useState<VideoInfo | null>(null);
   const [addToPlaylistVideo, setAddToPlaylistVideo] = useState<VideoInfo | null>(null);
@@ -27,19 +27,19 @@ export default function DashboardPage() {
 
   async function loadData() {
     try {
-      const [libraryStats, history] = await Promise.all([
+      const [libraryStats, recentItems] = await Promise.all([
         window.api.library.getStats(),
-        window.api.downloads.getHistory(5),
+        window.api.library.getRecent(5),
       ]);
       setStats(libraryStats);
-      setRecent(history);
+      setRecent(recentItems);
 
-      const statusMap: Record<number, boolean> = {};
-      await Promise.all(history.map(async (r) => {
+      const statusMap: Record<string, boolean> = {};
+      await Promise.all(recentItems.map(async (r) => {
         if (r.filePath) {
-          statusMap[r.id] = await window.api.app.fileExists(r.filePath);
+          statusMap[r.videoId] = await window.api.app.fileExists(r.filePath);
         } else {
-          statusMap[r.id] = false;
+          statusMap[r.videoId] = false;
         }
       }));
       setFileStatus(statusMap);
@@ -101,7 +101,7 @@ export default function DashboardPage() {
           Recent Downloads
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Last 5 from history
+          Recent in library
         </Typography>
       </Box>
 
@@ -112,12 +112,12 @@ export default function DashboardPage() {
       ) : (
         <Box display="flex" flexDirection="column" gap={1}>
           {recent.map((record) => {
-            const exists = fileStatus[record.id] !== false;
-            const missing = fileStatus[record.id] === false;
+            const exists = fileStatus[record.videoId] !== false;
+            const missing = fileStatus[record.videoId] === false;
 
             return (
               <Paper
-                key={record.id}
+                key={record.videoId}
                 sx={{
                   p: 1.5, borderRadius: 2, border: '1px solid',
                   borderColor: missing ? 'error.main' : 'divider',
@@ -137,9 +137,9 @@ export default function DashboardPage() {
                 onClick={() => {
                   if (missing) return;
                   if (record.format === 'mp3') {
-                    setPlayingRecord(record);
+                    setPlayingRecord({ id: 0, videoId: record.videoId, title: record.title, channel: record.channel, thumbnailUrl: record.thumbnailUrl, url: record.url, format: record.format || 'mp4', quality: 'best', filePath: record.filePath || '', fileSize: record.fileSize, duration: record.duration, status: 'completed', downloadedAt: record.downloadedAt || '' });
                   } else {
-                    setPreviewVideo({ id: record.videoId, title: record.title, channel: record.channel, channelId: '', thumbnail: record.thumbnailUrl || '', duration: 0, publishedAt: '', viewCount: 0, description: '' });
+                    setPreviewVideo({ id: record.videoId, title: record.title, channel: record.channel, channelId: '', thumbnail: record.thumbnailUrl || '', duration: record.duration, publishedAt: '', viewCount: 0, description: '' });
                   }
                 }}
               >
@@ -169,11 +169,11 @@ export default function DashboardPage() {
                   <Typography variant="body2" fontWeight={500} noWrap>{record.title}</Typography>
                   <Box display="flex" gap={1} alignItems="center" mt={0.25}>
                     <Typography variant="caption" color="text.secondary">{record.channel}</Typography>
-                    <Chip label={record.format.toUpperCase()} size="small" variant="outlined" sx={{ height: 16, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.5 } }} />
+                    {record.format && <Chip label={record.format.toUpperCase()} size="small" variant="outlined" sx={{ height: 16, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.5 } }} />}
                     {record.resolution && (
                       <Chip label={`${record.resolution}p`} size="small" variant="outlined" sx={{ height: 16, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.5 } }} />
                     )}
-                    <Typography variant="caption" color="text.secondary">{formatSize(record.fileSize)}</Typography>
+                    {record.fileSize > 0 && <Typography variant="caption" color="text.secondary">{formatSize(record.fileSize)}</Typography>}
                     {missing && (
                       <Chip label="File missing" size="small" color="error" variant="outlined" sx={{ height: 16, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.5 } }} />
                     )}
@@ -182,7 +182,7 @@ export default function DashboardPage() {
                 <Box display="flex" gap={0.5} flexShrink={0}>
                   <IconButton
                     size="small"
-                    onClick={() => setPlayingRecord(record)}
+                    onClick={() => setPlayingRecord({ id: 0, videoId: record.videoId, title: record.title, channel: record.channel, thumbnailUrl: record.thumbnailUrl, url: record.url, format: record.format || 'mp4', quality: 'best', filePath: record.filePath || '', fileSize: record.fileSize, duration: record.duration, status: 'completed', downloadedAt: record.downloadedAt || '' })}
                     title={missing ? 'File missing' : 'Play'}
                     disabled={missing}
                   >
@@ -190,13 +190,13 @@ export default function DashboardPage() {
                   </IconButton>
                   <IconButton
                     size="small"
-                    onClick={() => window.api.app.showInFinder(record.filePath)}
+                    onClick={() => record.filePath && window.api.app.showInFinder(record.filePath)}
                     title="Show in Finder"
                     disabled={missing}
                   >
                     <FolderOpenIcon fontSize="small" />
                   </IconButton>
-                  <IconButton size="small" onClick={() => setAddToPlaylistVideo({ id: record.videoId, title: record.title, channel: record.channel, channelId: '', thumbnail: record.thumbnailUrl || '', duration: 0, publishedAt: record.downloadedAt, viewCount: 0, description: '' })} title="Add to playlist">
+                  <IconButton size="small" onClick={() => setAddToPlaylistVideo({ id: record.videoId, title: record.title, channel: record.channel, channelId: '', thumbnail: record.thumbnailUrl || '', duration: record.duration, publishedAt: record.downloadedAt || '', viewCount: 0, description: '' })} title="Add to playlist">
                     <PlaylistAddIcon fontSize="small" />
                   </IconButton>
                   <IconButton size="small" onClick={() => window.api.app.openExternal(`https://www.youtube.com/watch?v=${record.videoId}`)} title="Open on YouTube">
