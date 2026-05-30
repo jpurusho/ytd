@@ -179,12 +179,14 @@ export class YouTubeApiService {
       maxResults,
     });
 
-    return (response.data.items || []).map(item => ({
-      channelId: item.snippet?.channelId || item.id?.channelId || '',
-      channelTitle: item.snippet?.channelTitle || item.snippet?.title || '',
-      thumbnail: item.snippet?.thumbnails?.default?.url || '',
-      description: item.snippet?.description || '',
-    }));
+    return (response.data.items || [])
+      .map(item => ({
+        channelId: item.id?.channelId || item.snippet?.channelId || '',
+        channelTitle: item.snippet?.title || item.snippet?.channelTitle || '',
+        thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || '',
+        description: item.snippet?.description || '',
+      }))
+      .filter(ch => ch.channelId);
   }
 
   async getVideoInfo(videoId: string): Promise<VideoInfo> {

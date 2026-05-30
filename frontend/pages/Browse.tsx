@@ -84,6 +84,7 @@ export default function Browse({ onDownload }: Props) {
   }
 
   async function openChannel(sub: SubscriptionInfo) {
+    if (!sub.channelId) return;
     setSelectedChannel(sub);
     setChannelVideos([]);
     setChannelNextPage(undefined);
@@ -92,8 +93,8 @@ export default function Browse({ onDownload }: Props) {
     setLoading(true);
     try {
       const result = await window.api.youtube.getChannelVideos(sub.channelId, 50);
-      setChannelVideos(result.videos);
-      setChannelNextPage(result.nextPageToken);
+      setChannelVideos(result?.videos || []);
+      setChannelNextPage(result?.nextPageToken);
     } catch (err) {
       console.error('Failed to load channel videos:', err);
     } finally {
@@ -106,8 +107,8 @@ export default function Browse({ onDownload }: Props) {
     setLoadingMore(true);
     try {
       const result = await window.api.youtube.getChannelVideos(selectedChannel.channelId, 50, channelNextPage);
-      setChannelVideos(prev => [...prev, ...result.videos]);
-      setChannelNextPage(result.nextPageToken);
+      setChannelVideos(prev => [...prev, ...(result?.videos || [])]);
+      setChannelNextPage(result?.nextPageToken);
     } catch (err) {
       console.error('Failed to load more videos:', err);
     } finally {
