@@ -9,6 +9,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary';
 import QueueMusicIcon from '@mui/icons-material/QueueMusic';
 import DownloadIcon from '@mui/icons-material/Download';
+import SyncIcon from '@mui/icons-material/Sync';
 import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -20,7 +21,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import type { UserInfo, LocalPlaylist, VideoInfo, LocalPlaylistVideoItem } from '@shared/types';
 import { VIDEO_DRAG_TYPE } from '../VideoCard/VideoCard';
 
-export type Page = 'dashboard' | 'search' | 'browse' | 'playlists' | 'downloads' | 'history' | 'library' | 'settings';
+export type Page = 'dashboard' | 'search' | 'browse' | 'playlists' | 'downloads' | 'history' | 'library' | 'sync' | 'settings';
 
 interface Props {
   currentPage: Page;
@@ -37,6 +38,7 @@ const navItems: Array<{ page: Page; label: string; icon: React.ReactNode }> = [
   { page: 'library', label: 'Library', icon: <VideoLibraryIcon /> },
   { page: 'browse', label: 'Browse', icon: <QueueMusicIcon /> },
   { page: 'downloads', label: 'Downloads', icon: <DownloadIcon /> },
+  { page: 'sync', label: 'Sync', icon: <SyncIcon /> },
   { page: 'settings', label: 'Settings', icon: <SettingsIcon /> },
 ];
 

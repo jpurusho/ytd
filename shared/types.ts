@@ -251,6 +251,25 @@ export interface ElectronAPI {
     syncToYouTube: (playlistId: number) => Promise<{ success: boolean; youtubePlaylistId: string }>;
     pullFromYouTube: (youtubePlaylistId: string, localPlaylistId?: number) => Promise<LocalPlaylist | null>;
   };
+  sync: {
+    start: () => Promise<void>;
+    stop: () => Promise<void>;
+    getPeers: () => Promise<SyncPeerInfo[]>;
+    getManifest: (peer: SyncPeerInfo) => Promise<SyncManifest>;
+    getPlaylistDetail: (peer: SyncPeerInfo, playlistId: number) => Promise<SyncPlaylistDetail>;
+    startSync: (peer: SyncPeerInfo, playlistIds: number[]) => Promise<number>;
+    pauseSync: (sessionId: number) => Promise<void>;
+    resumeSync: (sessionId: number) => Promise<void>;
+    cancelSync: (sessionId: number) => Promise<void>;
+    getHistory: (limit?: number) => Promise<SyncSessionRecord[]>;
+    sharePlaylist: (playlistId: number) => Promise<void>;
+    unsharePlaylist: (playlistId: number) => Promise<void>;
+    getSharedPlaylists: () => Promise<number[]>;
+    onProgress: (callback: (progress: SyncProgressInfo) => void) => () => void;
+    onSessionUpdate: (callback: (session: SyncSessionRecord) => void) => () => void;
+    onPeerFound: (callback: (peer: SyncPeerInfo) => void) => () => void;
+    onPeerLost: (callback: (peerId: string) => void) => () => void;
+  };
   app: {
     openExternal: (url: string) => Promise<void>;
     selectDirectory: () => Promise<string | null>;
@@ -271,6 +290,59 @@ export interface ElectronAPI {
     showInFinder: (filePath: string) => Promise<void>;
     onFullscreenChange: (callback: (isFullScreen: boolean) => void) => () => void;
   };
+}
+
+export interface SyncPeerInfo {
+  instanceId: string;
+  deviceName: string;
+  address: string;
+  port: number;
+  version: string;
+  libraryCount: number;
+}
+
+export interface SyncManifest {
+  peer: SyncPeerInfo;
+  playlists: Array<{ id: number; name: string; itemCount: number; totalSize: number }>;
+}
+
+export interface SyncPlaylistDetail {
+  id: number;
+  name: string;
+  description: string;
+  items: Array<{ videoId: string; title: string; channel: string; thumbnailUrl: string; fileSize: number; duration: number; hasFile: boolean }>;
+}
+
+export interface SyncProgressInfo {
+  sessionId: number;
+  currentVideoId: string;
+  currentTitle: string;
+  fileProgress: number;
+  speed: string;
+  eta: string;
+  downloadedBytes: number;
+  totalFileBytes: number;
+  completedFiles: number;
+  totalFiles: number;
+  totalTransferredBytes: number;
+  totalSessionBytes: number;
+  status: 'transferring' | 'completed' | 'paused' | 'failed' | 'cancelled';
+}
+
+export interface SyncSessionRecord {
+  id: number;
+  peerDeviceName: string;
+  peerAddress: string;
+  direction: 'send' | 'receive';
+  status: string;
+  playlistsSynced: string;
+  totalFiles: number;
+  completedFiles: number;
+  totalBytes: number;
+  transferredBytes: number;
+  startedAt: string;
+  completedAt: string | null;
+  error: string | null;
 }
 
 declare global {

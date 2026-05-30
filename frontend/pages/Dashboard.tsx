@@ -8,6 +8,7 @@ import Playlists from './Playlists';
 import Downloads from './Downloads';
 import History from './History';
 import Library from './Library';
+import Sync from './Sync';
 import Settings from './Settings';
 import type { UserInfo, DownloadRequest } from '@shared/types';
 
@@ -59,6 +60,7 @@ export default function Dashboard({ user, onLogout }: Props) {
       case 'downloads': return <Downloads />;
       case 'library': return <Library />;
       case 'history': return <History />;
+      case 'sync': return <Sync />;
       case 'settings': return <Settings />;
     }
   }

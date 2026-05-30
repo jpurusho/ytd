@@ -16,11 +16,13 @@ import {
   getLibraryItems, getLibraryItem, deleteLibraryItems, getRecentLibraryItems, getLibraryStats,
   upsertLibraryItem,
 } from './services/database';
+import { SyncManager } from './services/sync/sync-manager';
 import type { DownloadRequest, LocalPlaylistVideoItem } from '../shared/types';
 
 let authService: GoogleAuthService;
 let youtubeService: YouTubeApiService | null = null;
 let queueManager: QueueManager;
+let syncManager: SyncManager;
 
 function getYouTubeService(): YouTubeApiService {
   if (!youtubeService) {
@@ -209,6 +211,25 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('library:getStats', () => {
     return getLibraryStats();
   });
+
+  // ─── Sync ──────────────────────────────────────────────────────────────────
+
+  syncManager = new SyncManager();
+  syncManager.start();
+
+  ipcMain.handle('sync:start', () => syncManager.start());
+  ipcMain.handle('sync:stop', () => syncManager.stop());
+  ipcMain.handle('sync:getPeers', () => syncManager.getPeers());
+  ipcMain.handle('sync:getManifest', (_event, peer: any) => syncManager.getManifest(peer));
+  ipcMain.handle('sync:getPlaylistDetail', (_event, peer: any, playlistId: number) => syncManager.getPlaylistDetail(peer, playlistId));
+  ipcMain.handle('sync:startSync', (_event, peer: any, playlistIds: number[]) => syncManager.startSync(peer, playlistIds));
+  ipcMain.handle('sync:pauseSync', (_event, sessionId: number) => syncManager.pauseSync(sessionId));
+  ipcMain.handle('sync:resumeSync', (_event, sessionId: number) => syncManager.resumeSync(sessionId));
+  ipcMain.handle('sync:cancelSync', (_event, sessionId: number) => syncManager.cancelSync(sessionId));
+  ipcMain.handle('sync:getHistory', (_event, limit?: number) => syncManager.getSyncHistoryList(limit));
+  ipcMain.handle('sync:sharePlaylist', (_event, playlistId: number) => syncManager.sharePlaylist(playlistId));
+  ipcMain.handle('sync:unsharePlaylist', (_event, playlistId: number) => syncManager.unsharePlaylist(playlistId));
+  ipcMain.handle('sync:getSharedPlaylists', () => syncManager.getSharedPlaylists());
 
   // ─── App ────────────────────────────────────────────────────────────────────
 
