@@ -360,7 +360,7 @@ export default function Browse({ onDownload }: Props) {
             <TextField
               value={channelVideoFilter}
               onChange={(e) => setChannelVideoFilter(e.target.value)}
-              placeholder="Filter videos by title..."
+              placeholder="Filter by title or description..."
               size="small"
               fullWidth
               sx={{ mb: 2 }}
@@ -370,7 +370,11 @@ export default function Browse({ onDownload }: Props) {
 
           <Grid container spacing={2}>
             {channelVideos
-              .filter(v => !channelVideoFilter || v.title.toLowerCase().includes(channelVideoFilter.toLowerCase()))
+              .filter(v => {
+                if (!channelVideoFilter) return true;
+                const q = channelVideoFilter.toLowerCase();
+                return v.title.toLowerCase().includes(q) || v.description.toLowerCase().includes(q);
+              })
               .map((video) => (
               <Grid item xs={12} sm={6} md={4} lg={3} key={video.id}>
                 <Box sx={{ position: 'relative' }}>
