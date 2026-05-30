@@ -136,21 +136,26 @@ export class YouTubeApiService {
   }
 
   async getChannelVideos(channelId: string, maxResults: number = 50, pageToken?: string): Promise<{ videos: VideoInfo[]; nextPageToken?: string }> {
-    const response = await this.youtube.search.list({
-      part: ['snippet'],
-      channelId,
-      type: ['video'],
-      order: 'date',
+    // Get the channel's uploads playlist ID (UC... → UU...)
+    const uploadsPlaylistId = channelId.startsWith('UC')
+      ? 'UU' + channelId.slice(2)
+      : channelId;
+
+    // Use playlistItems.list — more reliable than search.list with channelId filter
+    const response = await this.youtube.playlistItems.list({
+      part: ['snippet', 'contentDetails'],
+      playlistId: uploadsPlaylistId,
       maxResults,
       pageToken: pageToken || undefined,
     });
 
     const videoIds = (response.data.items || [])
-      .map(item => item.id?.videoId)
+      .map(item => item.contentDetails?.videoId || item.snippet?.resourceId?.videoId)
       .filter((id): id is string => !!id);
 
-    if (videoIds.length === 0) return { videos: [], nextPageToken: undefined };
+    if (videoIds.length === 0) return { videos: [], nextPageToken: response.data.nextPageToken || undefined };
 
+    // Fetch full video details (duration, view count, etc.)
     const detailsResponse = await this.youtube.videos.list({
       part: ['snippet', 'contentDetails', 'statistics'],
       id: videoIds,
