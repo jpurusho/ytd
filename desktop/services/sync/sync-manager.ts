@@ -94,13 +94,16 @@ export class SyncManager {
   }
 
   async getSyncPreview(peer: PeerInfo): Promise<SyncPreview> {
+    syncLog(`Preview: connecting to ${peer.deviceName} (${peer.address}:${peer.port})`);
     const client = new SyncClient(peer);
     const peerManifest = await client.getManifest();
+    syncLog(`Preview: peer has ${peerManifest.playlists.length} playlists`);
 
     const peerPlaylists: PeerPlaylistDetail[] = [];
     for (const pl of peerManifest.playlists) {
       const detail = await client.getPlaylistDetail(pl.id);
       peerPlaylists.push(detail);
+      syncLog(`Preview: playlist "${pl.name}" — ${detail.items.length} items, ${detail.items.filter(i => i.hasFile).length} with files`);
     }
 
     const { receiveList, sendList } = this.computeDiff(peerPlaylists);
@@ -115,10 +118,13 @@ export class SyncManager {
   }
 
   async startSync(peer: PeerInfo): Promise<number> {
+    syncLog(`=== SYNC START with ${peer.deviceName} (${peer.address}:${peer.port}) ===`);
     const client = new SyncClient(peer);
     const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
+    syncLog(`Output dir: ${outputDir}`);
 
     const peerManifest = await client.getManifest();
+    syncLog(`Peer manifest: ${peerManifest.playlists.length} playlists`);
     const peerPlaylists: PeerPlaylistDetail[] = [];
     for (const pl of peerManifest.playlists) {
       const detail = await client.getPlaylistDetail(pl.id);
@@ -130,6 +136,7 @@ export class SyncManager {
     const totalFiles = receiveList.length + sendList.length;
     const totalBytes = receiveList.reduce((s, t) => s + t.fileSize, 0) + sendList.reduce((s, t) => s + t.fileSize, 0);
     const playlistNames = [...new Set([...receiveList.map(t => t.playlistName), ...sendList.map(t => t.playlistName)])].join(', ');
+    syncLog(`Plan: receive ${receiveList.length} files, send ${sendList.length} files, total ${(totalBytes / 1048576).toFixed(1)} MB`);
 
     const sessionId = createSyncSession({
       peerDeviceName: peer.deviceName,
@@ -331,6 +338,7 @@ export class SyncManager {
 
         totalTransferred += transfer.fileSize;
         completedFiles++;
+        syncLog(`OK ${transfer.videoId} "${transfer.title}" — ${(transfer.fileSize / 1048576).toFixed(1)} MB received`);
         updateSyncTransfer(transferId, { status: 'completed', transferredBytes: transfer.fileSize, completedAt: new Date().toISOString() });
 
         upsertLibraryItem({
@@ -376,8 +384,12 @@ export class SyncManager {
       const transfer = sendList[i];
       const transferId = transferIds[receiveList.length + i];
 
-      if (!transfer.filePath || !transfer.metadata) continue;
+      if (!transfer.filePath || !transfer.metadata) {
+        syncLog(`SKIP send ${transfer.videoId} — no filePath or metadata`);
+        continue;
+      }
 
+      syncLog(`Uploading ${transfer.videoId} "${transfer.title}" → peer (${(transfer.fileSize / 1048576).toFixed(1)} MB)`);
       updateSyncTransfer(transferId, { status: 'transferring', startedAt: new Date().toISOString() });
 
       try {
@@ -401,20 +413,26 @@ export class SyncManager {
 
         totalTransferred += transfer.fileSize;
         completedFiles++;
+        const sendStatus = result.status === 'exists' ? 'skipped (peer already has it)' : 'sent';
+        syncLog(`OK ${transfer.videoId} "${transfer.title}" — ${sendStatus}`);
         updateSyncTransfer(transferId, { status: result.status === 'exists' ? 'skipped' : 'completed', transferredBytes: transfer.fileSize, completedAt: new Date().toISOString() });
         updateSyncSession(sessionId, { completedFiles, transferredBytes: totalTransferred });
       } catch (err: any) {
         if (err.message === 'Aborted') break;
         updateSyncTransfer(transferId, { status: 'failed', completedAt: new Date().toISOString() });
-        syncLog(`Send FAILED ${transfer.videoId}: ${err.message}`);
+        updateSyncSession(sessionId, { error: `Send failed: ${transfer.title} — ${err.message}` });
+        syncLog(`Send FAILED ${transfer.videoId} "${transfer.title}": ${err.message}`);
       }
     }
 
     if (!this.activeAbort?.signal.aborted) {
       const finalStatus = completedFiles === 0 && totalFiles > 0 ? 'failed' : 'completed';
       const errorMsg = finalStatus === 'failed' ? `All ${totalFiles} transfers failed. Check that sender is running and files exist.` : undefined;
+      syncLog(`=== SYNC ${finalStatus.toUpperCase()}: ${completedFiles}/${totalFiles} files, ${(totalTransferred / 1048576).toFixed(1)} MB transferred ===`);
       updateSyncSession(sessionId, { status: finalStatus, completedFiles, transferredBytes: totalTransferred, completedAt: new Date().toISOString(), ...(errorMsg ? { error: errorMsg } : {}) });
       this.emitCompleted(sessionId, completedFiles, totalFiles, totalTransferred, totalBytes);
+    } else {
+      syncLog(`=== SYNC ABORTED at ${completedFiles}/${totalFiles} files ===`);
     }
 
     this.activeSessionId = null;

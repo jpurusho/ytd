@@ -244,8 +244,11 @@ export class SyncServer {
       return;
     }
 
+    serverLog(`Upload: ${videoId} "${title}" (${(fileSize / 1048576).toFixed(1)} MB) playlist="${playlistName}"`);
+
     const existing = getLibraryItem(videoId);
     if (existing && existing.filePath && existing.fileSize === fileSize && fs.existsSync(existing.filePath)) {
+      serverLog(`Upload: SKIP ${videoId} — already exists locally`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'exists' }));
       return;
@@ -283,9 +286,11 @@ export class SyncServer {
             addPlaylistItem(lp.id, { videoId, title, channel, thumbnailUrl, duration });
           }
 
+          serverLog(`Upload: OK ${videoId} → ${destPath}`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok' }));
         } catch (err: any) {
+          serverLog(`Upload: ERROR ${videoId} — ${err.message}`);
           res.writeHead(500);
           res.end(err.message);
         }
