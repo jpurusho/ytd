@@ -54,6 +54,7 @@ export class SyncManager {
 
     const port = await this.server.start();
     const stats = getLibraryStats();
+    syncLog(`App started. Sync server on port ${port}. Library: ${stats.totalItems} items, ${stats.downloadedCount} downloaded. Device: ${os.hostname()}`);
 
     this.discovery.startAdvertising(port, {
       deviceName: os.hostname(),
