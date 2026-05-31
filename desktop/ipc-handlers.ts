@@ -226,6 +226,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sync:resumeSync', (_event, sessionId: number) => syncManager.resumeSync(sessionId));
   ipcMain.handle('sync:cancelSync', (_event, sessionId: number) => syncManager.cancelSync(sessionId));
   ipcMain.handle('sync:getHistory', (_event, limit?: number) => syncManager.getSyncHistoryList(limit));
+  ipcMain.handle('sync:clearHistory', () => syncManager.clearHistory());
 
   // ─── App ────────────────────────────────────────────────────────────────────
 

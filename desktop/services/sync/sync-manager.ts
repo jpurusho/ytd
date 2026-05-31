@@ -8,7 +8,7 @@ import { SyncClient } from './sync-client';
 import {
   initSyncTables, getInstanceId,
   createSyncSession, updateSyncSession, getSyncHistory, getSyncSession,
-  createSyncTransfer, updateSyncTransfer, getSyncTransfers,
+  createSyncTransfer, updateSyncTransfer, getSyncTransfers, clearSyncHistory,
 } from './sync-database';
 import { getLibraryItem, upsertLibraryItem, toRelativePath, resolveFilePath, getSetting, addPlaylistItem, createLocalPlaylist, getLocalPlaylists, getPlaylistItems, getLibraryStats } from '../database';
 import type { PeerInfo, PeerManifest, PeerPlaylistDetail, SyncProgress, SyncSessionInfo, SyncTransferInfo } from './sync-types';
@@ -185,8 +185,23 @@ export class SyncManager {
     return getSyncHistory(limit);
   }
 
+  clearHistory(): void {
+    clearSyncHistory();
+  }
+
   getSyncSessionTransfers(sessionId: number): SyncTransferInfo[] {
     return getSyncTransfers(sessionId);
+  }
+
+  async getSyncPreviewDetailed(peer: PeerInfo): Promise<{ receive: any[]; send: any[] }> {
+    const client = new SyncClient(peer);
+    const peerManifest = await client.getManifest();
+    const peerPlaylists: PeerPlaylistDetail[] = [];
+    for (const pl of peerManifest.playlists) {
+      peerPlaylists.push(await client.getPlaylistDetail(pl.id));
+    }
+    const { receiveList, sendList } = this.computeDiff(peerPlaylists);
+    return { receive: receiveList, send: sendList };
   }
 
   private computeDiff(peerPlaylists: PeerPlaylistDetail[]): {
@@ -196,14 +211,23 @@ export class SyncManager {
     // RECEIVE: videos peer has that we don't
     const receiveList: Array<{ videoId: string; title: string; fileSize: number; playlistName: string }> = [];
     for (const pl of peerPlaylists) {
+      console.log(`[sync] Peer playlist "${pl.name}": ${pl.items.length} items`);
       for (const item of pl.items) {
-        if (!item.hasFile || item.fileSize === 0) continue;
+        if (!item.hasFile || item.fileSize === 0) {
+          console.log(`[sync]   SKIP ${item.videoId} "${item.title}" — hasFile=${item.hasFile} fileSize=${item.fileSize}`);
+          continue;
+        }
         if (receiveList.some(t => t.videoId === item.videoId)) continue;
         const local = getLibraryItem(item.videoId);
-        if (local && local.filePath && local.fileSize === item.fileSize && fs.existsSync(local.filePath)) continue;
+        if (local && local.filePath && local.fileSize === item.fileSize && fs.existsSync(local.filePath)) {
+          console.log(`[sync]   SKIP ${item.videoId} — already have locally (${local.fileSize} bytes)`);
+          continue;
+        }
+        console.log(`[sync]   RECEIVE ${item.videoId} "${item.title}" (${item.fileSize} bytes)`);
         receiveList.push({ videoId: item.videoId, title: item.title, fileSize: item.fileSize, playlistName: pl.name });
       }
     }
+    console.log(`[sync] Total to receive: ${receiveList.length}`);
 
     // SEND: videos we have that peer doesn't
     const sendList: Array<{ videoId: string; title: string; fileSize: number; filePath: string; playlistName: string; metadata: any }> = [];

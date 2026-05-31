@@ -143,6 +143,12 @@ export function removeSharedPlaylist(playlistId: number): void {
   db.prepare('DELETE FROM sync_shared_playlists WHERE playlist_id = ?').run(playlistId);
 }
 
+export function clearSyncHistory(): void {
+  const db = getDb();
+  db.exec('DELETE FROM sync_transfers');
+  db.exec('DELETE FROM sync_sessions');
+}
+
 export function getSharedPlaylistIds(): number[] {
   const db = getDb();
   const rows = db.prepare('SELECT playlist_id FROM sync_shared_playlists').all() as any[];

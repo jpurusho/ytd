@@ -78,6 +78,7 @@ const api: ElectronAPI = {
     resumeSync: (sessionId: number) => ipcRenderer.invoke('sync:resumeSync', sessionId),
     cancelSync: (sessionId: number) => ipcRenderer.invoke('sync:cancelSync', sessionId),
     getHistory: (limit?: number) => ipcRenderer.invoke('sync:getHistory', limit),
+    clearHistory: () => ipcRenderer.invoke('sync:clearHistory'),
     onProgress: (callback: any) => {
       const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
       ipcRenderer.on('sync:progress', handler);

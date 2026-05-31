@@ -261,6 +261,7 @@ export interface ElectronAPI {
     resumeSync: (sessionId: number) => Promise<void>;
     cancelSync: (sessionId: number) => Promise<void>;
     getHistory: (limit?: number) => Promise<SyncSessionRecord[]>;
+    clearHistory: () => Promise<void>;
     onProgress: (callback: (progress: SyncProgressInfo) => void) => () => void;
     onSessionUpdate: (callback: (session: SyncSessionRecord) => void) => () => void;
     onPeerFound: (callback: (peer: SyncPeerInfo) => void) => () => void;

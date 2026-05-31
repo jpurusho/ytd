@@ -191,7 +191,12 @@ export default function Sync() {
       {/* History */}
       {history.length > 0 && (
         <>
-          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>Sync History</Typography>
+          <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+            <Typography variant="subtitle2" color="text.secondary">Sync History</Typography>
+            <Button size="small" color="error" onClick={async () => { await window.api.sync.clearHistory(); setHistory([]); }}>
+              Clear
+            </Button>
+          </Box>
           <Box display="flex" flexDirection="column" gap={1}>
             {history.map(session => (
               <Paper key={session.id} sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 2 }} elevation={0}>
