@@ -1,7 +1,21 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import type { PeerInfo, PeerManifest, PeerPlaylistDetail } from './sync-types';
+
+function clientLog(msg: string): void {
+  let outputDir: string;
+  try {
+    const { getSetting } = require('../database');
+    outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
+  } catch {
+    outputDir = path.join(os.homedir(), 'Downloads');
+  }
+  const logPath = path.join(outputDir, 'ytd-sync.log');
+  const line = `[${new Date().toISOString()}] [client] ${msg}\n`;
+  try { fs.appendFileSync(logPath, line); } catch {}
+}
 
 export class SyncClient {
   private address: string;
@@ -43,13 +57,17 @@ export class SyncClient {
         headers['Range'] = `bytes=${resumeFrom}-`;
       }
 
+      const reqPath = `/file/${encodeURIComponent(videoId)}`;
+      clientLog(`GET http://${this.address}:${this.port}${reqPath} (resume=${resumeFrom})`);
+
       const req = http.get({
         hostname: this.address,
         port: this.port,
-        path: `/file/${encodeURIComponent(videoId)}`,
+        path: reqPath,
         headers,
       }, (res) => {
         if (res.statusCode !== 200 && res.statusCode !== 206) {
+          clientLog(`HTTP ${res.statusCode} for ${videoId}`);
           reject(new Error(`HTTP ${res.statusCode}`));
           return;
         }
@@ -92,24 +110,27 @@ export class SyncClient {
               reject(new Error('Aborted'));
               return;
             }
-            // Rename .partial to final
             try {
               if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
               fs.renameSync(partialPath, destPath);
+              clientLog(`Download complete: ${videoId} → ${destPath} (${downloaded} bytes)`);
               resolve();
-            } catch (err) {
+            } catch (err: any) {
+              clientLog(`Rename failed: ${partialPath} → ${destPath}: ${err.message}`);
               reject(err);
             }
           });
         });
 
         res.on('error', (err) => {
+          clientLog(`Stream error for ${videoId}: ${err.message}`);
           writeStream.close();
           reject(err);
         });
       });
 
       req.on('error', (err) => {
+        clientLog(`Connection error for ${videoId}: ${err.message}`);
         reject(err);
       });
 
@@ -184,12 +205,14 @@ export class SyncClient {
 
   private fetchJson<T>(urlPath: string): Promise<T> {
     return new Promise((resolve, reject) => {
+      clientLog(`JSON GET http://${this.address}:${this.port}${urlPath}`);
       http.get({
         hostname: this.address,
         port: this.port,
         path: urlPath,
       }, (res) => {
         if (res.statusCode !== 200) {
+          clientLog(`JSON ${res.statusCode} for ${urlPath}`);
           reject(new Error(`HTTP ${res.statusCode}`));
           return;
         }
@@ -202,8 +225,8 @@ export class SyncClient {
             reject(new Error('Invalid JSON response'));
           }
         });
-        res.on('error', reject);
-      }).on('error', reject);
+        res.on('error', (err) => { clientLog(`JSON stream error ${urlPath}: ${err.message}`); reject(err); });
+      }).on('error', (err) => { clientLog(`JSON connection error ${urlPath}: ${err.message}`); reject(err); });
     });
   }
 }
