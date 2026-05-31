@@ -129,7 +129,12 @@ export class SyncManager {
     this.activeSessionId = sessionId;
     this.activeAbort = new AbortController();
 
-    this.processSync(client, sessionId, receiveList, sendList, transferIds, peerPlaylists, outputDir);
+    this.processSync(client, sessionId, receiveList, sendList, transferIds, peerPlaylists, outputDir)
+      .catch(err => {
+        console.error('[sync] processSync failed:', err);
+        updateSyncSession(sessionId, { status: 'failed', error: err.message, completedAt: new Date().toISOString() });
+        this.sendSessionUpdate(sessionId);
+      });
     return sessionId;
   }
 
@@ -295,6 +300,7 @@ export class SyncManager {
       if (fs.existsSync(partialPath)) resumeFrom = fs.statSync(partialPath).size;
 
       updateSyncTransfer(transferId, { status: 'transferring', startedAt: new Date().toISOString() });
+      console.log(`[sync] Downloading ${transfer.videoId} → ${destPath} (resume=${resumeFrom})`);
 
       try {
         await client.downloadFile(transfer.videoId, destPath, {
@@ -340,7 +346,7 @@ export class SyncManager {
       } catch (err: any) {
         if (err.message === 'Aborted') break;
         updateSyncTransfer(transferId, { status: 'failed', completedAt: new Date().toISOString() });
-        console.error(`[sync] Receive failed for ${transfer.videoId}:`, err.message);
+        console.error(`[sync] Receive FAILED for ${transfer.videoId} "${transfer.title}":`, err.message, err.stack);
       }
     }
 
@@ -385,8 +391,12 @@ export class SyncManager {
     }
 
     if (!this.activeAbort?.signal.aborted) {
-      updateSyncSession(sessionId, { status: 'completed', completedFiles, transferredBytes: totalTransferred, completedAt: new Date().toISOString() });
+      const finalStatus = completedFiles === 0 && totalFiles > 0 ? 'failed' : 'completed';
+      updateSyncSession(sessionId, { status: finalStatus, completedFiles, transferredBytes: totalTransferred, completedAt: new Date().toISOString() });
       this.emitCompleted(sessionId, completedFiles, totalFiles, totalTransferred, totalBytes);
+      if (finalStatus === 'failed') {
+        console.error(`[sync] Session ${sessionId} failed: 0/${totalFiles} files transferred`);
+      }
     }
 
     this.activeSessionId = null;
