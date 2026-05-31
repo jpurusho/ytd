@@ -188,12 +188,20 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
   }, [playlistItems]);
 
   async function loadLocalFiles() {
-    const history = await window.api.downloads.getHistory(1000);
     const map: Record<string, DownloadRecord> = {};
-    for (const record of history) {
-      if (record.filePath) {
-        const exists = await window.api.app.fileExists(record.filePath);
-        if (exists) map[record.videoId] = record;
+    for (const item of playlistItems) {
+      const lib = await window.api.library.get(item.videoId);
+      if (lib && lib.filePath) {
+        const exists = await window.api.app.fileExists(lib.filePath);
+        if (exists) {
+          map[item.videoId] = {
+            id: 0, videoId: lib.videoId, title: lib.title, channel: lib.channel,
+            thumbnailUrl: lib.thumbnailUrl, url: lib.url, format: lib.format || 'mp4',
+            quality: lib.quality || 'best', resolution: lib.resolution,
+            filePath: lib.filePath, fileSize: lib.fileSize, duration: lib.duration,
+            status: 'completed', downloadedAt: lib.downloadedAt || '',
+          };
+        }
       }
     }
     setLocalFiles(map);
