@@ -4,6 +4,7 @@ import {
   TableHead, TableRow, IconButton, Button, TextField, InputAdornment,
   Chip, Checkbox, TableSortLabel, Dialog, DialogTitle, DialogContent,
   DialogActions, FormControlLabel, Menu, MenuItem, ListItemIcon, ListItemText,
+  Popover,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -13,12 +14,38 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import ViewColumnIcon from '@mui/icons-material/ViewColumn';
 import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
 import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
 import type { LibraryItem, DownloadRecord, VideoInfo } from '@shared/types';
 
-type SortField = 'title' | 'channel' | 'format' | 'fileSize' | 'resolution' | 'downloadedAt';
+type SortField = 'title' | 'channel' | 'format' | 'fileSize' | 'resolution' | 'downloadedAt' | 'addedAt' | 'duration';
 type SortOrder = 'asc' | 'desc';
+
+interface ColumnDef {
+  id: SortField;
+  label: string;
+  defaultVisible: boolean;
+}
+
+const ALL_COLUMNS: ColumnDef[] = [
+  { id: 'title', label: 'Title', defaultVisible: true },
+  { id: 'channel', label: 'Channel', defaultVisible: true },
+  { id: 'format', label: 'Format', defaultVisible: true },
+  { id: 'resolution', label: 'Quality', defaultVisible: true },
+  { id: 'fileSize', label: 'Size', defaultVisible: true },
+  { id: 'duration', label: 'Duration', defaultVisible: false },
+  { id: 'downloadedAt', label: 'Downloaded', defaultVisible: true },
+  { id: 'addedAt', label: 'Added', defaultVisible: false },
+];
+
+function loadVisibleColumns(): Set<SortField> {
+  try {
+    const saved = localStorage.getItem('ytd-library-columns');
+    if (saved) return new Set(JSON.parse(saved));
+  } catch {}
+  return new Set(ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.id));
+}
 
 export default function Library() {
   const [items, setItems] = useState<LibraryItem[]>([]);
@@ -33,6 +60,8 @@ export default function Library() {
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [menuItem, setMenuItem] = useState<LibraryItem | null>(null);
+  const [visibleColumns, setVisibleColumns] = useState<Set<SortField>>(loadVisibleColumns);
+  const [columnAnchor, setColumnAnchor] = useState<null | HTMLElement>(null);
 
   useEffect(() => {
     loadLibrary();
@@ -100,10 +129,29 @@ export default function Library() {
       case 'format': cmp = (a.format || '').localeCompare(b.format || ''); break;
       case 'fileSize': cmp = a.fileSize - b.fileSize; break;
       case 'resolution': cmp = (parseInt(a.resolution || '0') || 0) - (parseInt(b.resolution || '0') || 0); break;
+      case 'duration': cmp = a.duration - b.duration; break;
       case 'downloadedAt': cmp = (a.downloadedAt || '').localeCompare(b.downloadedAt || ''); break;
+      case 'addedAt': cmp = a.addedAt.localeCompare(b.addedAt); break;
     }
     return sortOrder === 'asc' ? cmp : -cmp;
   });
+
+  function toggleColumn(col: SortField) {
+    const next = new Set(visibleColumns);
+    if (next.has(col)) { if (next.size > 2) next.delete(col); }
+    else next.add(col);
+    setVisibleColumns(next);
+    localStorage.setItem('ytd-library-columns', JSON.stringify([...next]));
+  }
+
+  function formatDuration(seconds: number): string {
+    if (!seconds) return '—';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
 
   function formatSize(bytes: number): string {
     if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
@@ -160,17 +208,21 @@ export default function Library() {
       </Box>
 
       {items.length > 0 && (
-        <TextField
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter by title or channel..."
-          size="small"
-          fullWidth
-          sx={{ mb: 2 }}
-          InputProps={{
-            startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
-          }}
-        />
+        <Box display="flex" gap={1} mb={2}>
+          <TextField
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter by title or channel..."
+            size="small"
+            fullWidth
+            InputProps={{
+              startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+            }}
+          />
+          <IconButton size="small" onClick={(e) => setColumnAnchor(e.currentTarget)} title="Choose columns">
+            <ViewColumnIcon fontSize="small" />
+          </IconButton>
+        </Box>
       )}
 
       {sorted.length === 0 ? (
@@ -192,36 +244,13 @@ export default function Library() {
                     onChange={toggleSelectAll}
                   />
                 </TableCell>
-                <TableCell>
-                  <TableSortLabel active={sortField === 'title'} direction={sortField === 'title' ? sortOrder : 'asc'} onClick={() => handleSort('title')}>
-                    Title
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell>
-                  <TableSortLabel active={sortField === 'channel'} direction={sortField === 'channel' ? sortOrder : 'asc'} onClick={() => handleSort('channel')}>
-                    Channel
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell>
-                  <TableSortLabel active={sortField === 'format'} direction={sortField === 'format' ? sortOrder : 'asc'} onClick={() => handleSort('format')}>
-                    Format
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell>
-                  <TableSortLabel active={sortField === 'resolution'} direction={sortField === 'resolution' ? sortOrder : 'asc'} onClick={() => handleSort('resolution')}>
-                    Quality
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell>
-                  <TableSortLabel active={sortField === 'fileSize'} direction={sortField === 'fileSize' ? sortOrder : 'asc'} onClick={() => handleSort('fileSize')}>
-                    Size
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell>
-                  <TableSortLabel active={sortField === 'downloadedAt'} direction={sortField === 'downloadedAt' ? sortOrder : 'asc'} onClick={() => handleSort('downloadedAt')}>
-                    Downloaded
-                  </TableSortLabel>
-                </TableCell>
+                {ALL_COLUMNS.filter(c => visibleColumns.has(c.id)).map(col => (
+                  <TableCell key={col.id}>
+                    <TableSortLabel active={sortField === col.id} direction={sortField === col.id ? sortOrder : 'asc'} onClick={() => handleSort(col.id)}>
+                      {col.label}
+                    </TableSortLabel>
+                  </TableCell>
+                ))}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -231,26 +260,48 @@ export default function Library() {
                   <TableCell padding="checkbox">
                     <Checkbox size="small" checked={selected.has(item.videoId)} onChange={() => toggleSelect(item.videoId)} />
                   </TableCell>
-                  <TableCell sx={{ maxWidth: 250 }}>
-                    <Typography variant="body2" noWrap>{item.title}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" noWrap color="text.secondary">{item.channel}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    {item.format && <Chip label={item.format.toUpperCase()} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />}
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary">
-                      {item.resolution ? `${item.resolution}p` : '—'}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary">{formatSize(item.fileSize)}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary">{formatDate(item.downloadedAt)}</Typography>
-                  </TableCell>
+                  {visibleColumns.has('title') && (
+                    <TableCell sx={{ maxWidth: 250 }}>
+                      <Typography variant="body2" noWrap>{item.title}</Typography>
+                    </TableCell>
+                  )}
+                  {visibleColumns.has('channel') && (
+                    <TableCell>
+                      <Typography variant="body2" noWrap color="text.secondary">{item.channel}</Typography>
+                    </TableCell>
+                  )}
+                  {visibleColumns.has('format') && (
+                    <TableCell>
+                      {item.format && <Chip label={item.format.toUpperCase()} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />}
+                    </TableCell>
+                  )}
+                  {visibleColumns.has('resolution') && (
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {item.resolution ? `${item.resolution}p` : '—'}
+                      </Typography>
+                    </TableCell>
+                  )}
+                  {visibleColumns.has('fileSize') && (
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">{formatSize(item.fileSize)}</Typography>
+                    </TableCell>
+                  )}
+                  {visibleColumns.has('duration') && (
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">{formatDuration(item.duration)}</Typography>
+                    </TableCell>
+                  )}
+                  {visibleColumns.has('downloadedAt') && (
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">{formatDate(item.downloadedAt)}</Typography>
+                    </TableCell>
+                  )}
+                  {visibleColumns.has('addedAt') && (
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">{formatDate(item.addedAt)}</Typography>
+                    </TableCell>
+                  )}
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                     {item.filePath && (
                       <IconButton size="small" onClick={() => setPlayingItem(item)} title="Play">
@@ -319,6 +370,24 @@ export default function Library() {
           <ListItemText sx={{ color: 'error.main' }}>Delete</ListItemText>
         </MenuItem>
       </Menu>
+
+      <Popover
+        open={!!columnAnchor}
+        anchorEl={columnAnchor}
+        onClose={() => setColumnAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Box sx={{ p: 1.5, minWidth: 160 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ px: 1, pb: 0.5, display: 'block' }}>Show Columns</Typography>
+          {ALL_COLUMNS.map(col => (
+            <MenuItem key={col.id} dense onClick={() => toggleColumn(col.id)}>
+              <Checkbox size="small" checked={visibleColumns.has(col.id)} sx={{ p: 0.5, mr: 1 }} />
+              <ListItemText primaryTypographyProps={{ variant: 'body2' }}>{col.label}</ListItemText>
+            </MenuItem>
+          ))}
+        </Box>
+      </Popover>
 
       <Dialog open={deleteDialogOpen} onClose={() => { setDeleteDialogOpen(false); setDeleteFiles(false); }}>
         <DialogTitle>Delete from Library</DialogTitle>
