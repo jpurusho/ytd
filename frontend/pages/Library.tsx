@@ -4,7 +4,7 @@ import {
   TableHead, TableRow, IconButton, Button, TextField, InputAdornment,
   Chip, Checkbox, TableSortLabel, Dialog, DialogTitle, DialogContent,
   DialogActions, FormControlLabel, Menu, MenuItem, ListItemIcon, ListItemText,
-  Popover,
+  Popover, Grid, Paper, ToggleButtonGroup, ToggleButton,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -15,6 +15,8 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import ViewColumnIcon from '@mui/icons-material/ViewColumn';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import GridViewIcon from '@mui/icons-material/GridView';
 import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
 import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
 import type { LibraryItem, DownloadRecord, VideoInfo } from '@shared/types';
@@ -62,6 +64,7 @@ export default function Library() {
   const [menuItem, setMenuItem] = useState<LibraryItem | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<Set<SortField>>(loadVisibleColumns);
   const [columnAnchor, setColumnAnchor] = useState<null | HTMLElement>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => (localStorage.getItem('ytd-library-view') as any) || 'list');
 
   useEffect(() => {
     loadLibrary();
@@ -208,7 +211,7 @@ export default function Library() {
       </Box>
 
       {items.length > 0 && (
-        <Box display="flex" gap={1} mb={2}>
+        <Box display="flex" gap={1} mb={2} alignItems="center">
           <TextField
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
@@ -219,9 +222,20 @@ export default function Library() {
               startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
             }}
           />
-          <IconButton size="small" onClick={(e) => setColumnAnchor(e.currentTarget)} title="Choose columns">
-            <ViewColumnIcon fontSize="small" />
-          </IconButton>
+          <ToggleButtonGroup
+            value={viewMode}
+            exclusive
+            onChange={(_, v) => { if (v) { setViewMode(v); localStorage.setItem('ytd-library-view', v); } }}
+            size="small"
+          >
+            <ToggleButton value="list" title="Table view"><ViewListIcon fontSize="small" /></ToggleButton>
+            <ToggleButton value="grid" title="Card view"><GridViewIcon fontSize="small" /></ToggleButton>
+          </ToggleButtonGroup>
+          {viewMode === 'list' && (
+            <IconButton size="small" onClick={(e) => setColumnAnchor(e.currentTarget)} title="Choose columns">
+              <ViewColumnIcon fontSize="small" />
+            </IconButton>
+          )}
         </Box>
       )}
 
@@ -231,6 +245,53 @@ export default function Library() {
             {items.length === 0 ? 'Your library is empty. Download a video to get started.' : 'No matching results'}
           </Typography>
         </Box>
+      ) : viewMode === 'grid' ? (
+        <Grid container spacing={1.5}>
+          {sorted.map((item) => (
+            <Grid item xs={12} sm={6} md={4} key={item.videoId}>
+              <Paper
+                sx={{
+                  p: 1.5, borderRadius: 2, border: '1px solid',
+                  borderColor: selected.has(item.videoId) ? 'primary.main' : 'divider',
+                  display: 'flex', gap: 1.5, cursor: 'pointer',
+                  opacity: item.filePath ? 1 : 0.5,
+                  '&:hover': { borderColor: 'primary.main' },
+                }}
+                elevation={0}
+                onClick={() => { if (item.filePath) setPlayingItem(item); }}
+              >
+                <Checkbox
+                  size="small"
+                  checked={selected.has(item.videoId)}
+                  onChange={(e) => { e.stopPropagation(); toggleSelect(item.videoId); }}
+                  onClick={(e) => e.stopPropagation()}
+                  sx={{ alignSelf: 'flex-start', p: 0.25 }}
+                />
+                <Box sx={{ width: 80, height: 52, flexShrink: 0, borderRadius: 1, overflow: 'hidden', bgcolor: 'action.hover' }}>
+                  {item.thumbnailUrl ? (
+                    <img src={item.thumbnailUrl} alt="" style={{ width: 80, height: 52, objectFit: 'cover', display: 'block' }} />
+                  ) : (
+                    <Box sx={{ width: 80, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <PlayArrowIcon sx={{ color: 'text.secondary' }} />
+                    </Box>
+                  )}
+                </Box>
+                <Box flex={1} overflow="hidden">
+                  <Typography variant="body2" fontWeight={500} noWrap>{item.title}</Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {item.channel}{item.format ? ` · ${item.format.toUpperCase()}` : ''}{item.resolution ? ` ${item.resolution}p` : ''}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" noWrap>
+                    {item.fileSize > 0 ? formatSize(item.fileSize) : ''}{item.downloadedAt ? ` · ${formatDate(item.downloadedAt)}` : ''}
+                  </Typography>
+                </Box>
+                <IconButton size="small" onClick={(e) => { e.stopPropagation(); setMenuAnchor(e.currentTarget); setMenuItem(item); }} sx={{ alignSelf: 'flex-start' }}>
+                  <MoreVertIcon fontSize="small" />
+                </IconButton>
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
       ) : (
         <TableContainer>
           <Table size="small">
