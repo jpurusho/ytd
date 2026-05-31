@@ -6,13 +6,17 @@ import { SyncDiscovery } from './sync-discovery';
 import { SyncServer } from './sync-server';
 import { SyncClient } from './sync-client';
 import {
-  initSyncTables, getInstanceId, getSharedPlaylistIds,
-  addSharedPlaylist, removeSharedPlaylist,
+  initSyncTables, getInstanceId,
   createSyncSession, updateSyncSession, getSyncHistory, getSyncSession,
   createSyncTransfer, updateSyncTransfer, getSyncTransfers,
 } from './sync-database';
-import { getLibraryItem, upsertLibraryItem, toRelativePath, getSetting, addPlaylistItem, createLocalPlaylist, getLocalPlaylists, getLibraryStats } from '../database';
+import { getLibraryItem, upsertLibraryItem, toRelativePath, resolveFilePath, getSetting, addPlaylistItem, createLocalPlaylist, getLocalPlaylists, getPlaylistItems, getLibraryStats } from '../database';
 import type { PeerInfo, PeerManifest, PeerPlaylistDetail, SyncProgress, SyncSessionInfo, SyncTransferInfo } from './sync-types';
+
+export interface SyncPreview {
+  receive: { count: number; totalSize: number; playlists: string[] };
+  send: { count: number; totalSize: number; playlists: string[] };
+}
 
 export class SyncManager {
   private discovery: SyncDiscovery;
@@ -71,55 +75,61 @@ export class SyncManager {
     return client.getPlaylistDetail(playlistId);
   }
 
-  async startSync(peer: PeerInfo, playlistIds: number[]): Promise<number> {
+  async getSyncPreview(peer: PeerInfo): Promise<SyncPreview> {
+    const client = new SyncClient(peer);
+    const peerManifest = await client.getManifest();
+
+    const peerPlaylists: PeerPlaylistDetail[] = [];
+    for (const pl of peerManifest.playlists) {
+      const detail = await client.getPlaylistDetail(pl.id);
+      peerPlaylists.push(detail);
+    }
+
+    const { receiveList, sendList } = this.computeDiff(peerPlaylists);
+
+    const receivePlaylists = [...new Set(receiveList.map(t => t.playlistName))];
+    const sendPlaylists = [...new Set(sendList.map(t => t.playlistName))];
+
+    return {
+      receive: { count: receiveList.length, totalSize: receiveList.reduce((s, t) => s + t.fileSize, 0), playlists: receivePlaylists },
+      send: { count: sendList.length, totalSize: sendList.reduce((s, t) => s + t.fileSize, 0), playlists: sendPlaylists },
+    };
+  }
+
+  async startSync(peer: PeerInfo): Promise<number> {
     const client = new SyncClient(peer);
     const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
 
-    // Fetch details for all selected playlists
-    const playlists: PeerPlaylistDetail[] = [];
-    for (const id of playlistIds) {
-      const detail = await client.getPlaylistDetail(id);
-      playlists.push(detail);
+    const peerManifest = await client.getManifest();
+    const peerPlaylists: PeerPlaylistDetail[] = [];
+    for (const pl of peerManifest.playlists) {
+      const detail = await client.getPlaylistDetail(pl.id);
+      peerPlaylists.push(detail);
     }
 
-    // Build transfer list (skip already-synced files)
-    const transfers: Array<{ videoId: string; title: string; fileSize: number; playlistName: string }> = [];
-    for (const pl of playlists) {
-      for (const item of pl.items) {
-        if (!item.hasFile || item.fileSize === 0) continue;
-        const local = getLibraryItem(item.videoId);
-        if (local && local.filePath && local.fileSize === item.fileSize) continue;
-        // Check if already in transfer list (shared across playlists)
-        if (transfers.some(t => t.videoId === item.videoId)) continue;
-        transfers.push({ videoId: item.videoId, title: item.title, fileSize: item.fileSize, playlistName: pl.name });
-      }
-    }
+    const { receiveList, sendList } = this.computeDiff(peerPlaylists);
 
-    const totalBytes = transfers.reduce((sum, t) => sum + t.fileSize, 0);
-    const playlistNames = playlists.map(p => p.name).join(', ');
+    const totalFiles = receiveList.length + sendList.length;
+    const totalBytes = receiveList.reduce((s, t) => s + t.fileSize, 0) + sendList.reduce((s, t) => s + t.fileSize, 0);
+    const playlistNames = [...new Set([...receiveList.map(t => t.playlistName), ...sendList.map(t => t.playlistName)])].join(', ');
 
     const sessionId = createSyncSession({
       peerDeviceName: peer.deviceName,
       peerAddress: `${peer.address}:${peer.port}`,
       direction: 'receive',
       playlistsSynced: playlistNames,
-      totalFiles: transfers.length,
+      totalFiles,
       totalBytes,
     });
 
-    // Create transfer records
     const transferIds: number[] = [];
-    for (const t of transfers) {
-      const id = createSyncTransfer(sessionId, t.videoId, t.title, t.fileSize);
-      transferIds.push(id);
-    }
+    for (const t of receiveList) transferIds.push(createSyncTransfer(sessionId, t.videoId, t.title, t.fileSize));
+    for (const t of sendList) transferIds.push(createSyncTransfer(sessionId, t.videoId, t.title, t.fileSize));
 
     this.activeSessionId = sessionId;
     this.activeAbort = new AbortController();
 
-    // Process transfers
-    this.processTransfers(client, sessionId, transfers, transferIds, playlists, outputDir);
-
+    this.processSync(client, sessionId, receiveList, sendList, transferIds, peerPlaylists, outputDir);
     return sessionId;
   }
 
@@ -139,7 +149,6 @@ export class SyncManager {
     this.activeSessionId = sessionId;
     this.activeAbort = new AbortController();
 
-    // Get remaining transfers
     const allTransfers = getSyncTransfers(sessionId);
     const pending = allTransfers.filter(t => t.status === 'pending' || t.status === 'transferring');
     if (pending.length === 0) return;
@@ -149,10 +158,18 @@ export class SyncManager {
     const client = new SyncClient(peer);
     const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
 
-    const transfers = pending.map(t => ({ videoId: t.videoId, title: t.title, fileSize: t.fileSize, playlistName: '' }));
-    const transferIds = pending.map(t => t.id);
+    // Re-fetch playlists for metadata
+    let peerPlaylists: PeerPlaylistDetail[] = [];
+    try {
+      const manifest = await client.getManifest();
+      for (const pl of manifest.playlists) {
+        peerPlaylists.push(await client.getPlaylistDetail(pl.id));
+      }
+    } catch {}
 
-    this.processTransfers(client, sessionId, transfers, transferIds, [], outputDir);
+    const receiveList = pending.map(t => ({ videoId: t.videoId, title: t.title, fileSize: t.fileSize, playlistName: '' }));
+
+    this.processSync(client, sessionId, receiveList, [], pending.map(t => t.id), peerPlaylists, outputDir);
   }
 
   cancelSync(sessionId: number): void {
@@ -160,29 +177,8 @@ export class SyncManager {
       this.activeAbort.abort();
     }
     updateSyncSession(sessionId, { status: 'cancelled', completedAt: new Date().toISOString() });
-    // Clean up .partial files
-    const transfers = getSyncTransfers(sessionId);
-    const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
-    for (const t of transfers) {
-      if (t.status === 'pending' || t.status === 'transferring') {
-        const partialPath = path.join(outputDir, `${t.videoId}.partial`);
-        try { if (fs.existsSync(partialPath)) fs.unlinkSync(partialPath); } catch {}
-      }
-    }
     this.activeSessionId = null;
     this.sendSessionUpdate(sessionId);
-  }
-
-  sharePlaylist(playlistId: number): void {
-    addSharedPlaylist(playlistId);
-  }
-
-  unsharePlaylist(playlistId: number): void {
-    removeSharedPlaylist(playlistId);
-  }
-
-  getSharedPlaylists(): number[] {
-    return getSharedPlaylistIds();
   }
 
   getSyncHistoryList(limit?: number): SyncSessionInfo[] {
@@ -193,32 +189,86 @@ export class SyncManager {
     return getSyncTransfers(sessionId);
   }
 
-  private async processTransfers(
+  private computeDiff(peerPlaylists: PeerPlaylistDetail[]): {
+    receiveList: Array<{ videoId: string; title: string; fileSize: number; playlistName: string }>;
+    sendList: Array<{ videoId: string; title: string; fileSize: number; filePath: string; playlistName: string; metadata: any }>;
+  } {
+    // RECEIVE: videos peer has that we don't
+    const receiveList: Array<{ videoId: string; title: string; fileSize: number; playlistName: string }> = [];
+    for (const pl of peerPlaylists) {
+      for (const item of pl.items) {
+        if (!item.hasFile || item.fileSize === 0) continue;
+        if (receiveList.some(t => t.videoId === item.videoId)) continue;
+        const local = getLibraryItem(item.videoId);
+        if (local && local.filePath && local.fileSize === item.fileSize && fs.existsSync(local.filePath)) continue;
+        receiveList.push({ videoId: item.videoId, title: item.title, fileSize: item.fileSize, playlistName: pl.name });
+      }
+    }
+
+    // SEND: videos we have that peer doesn't
+    const sendList: Array<{ videoId: string; title: string; fileSize: number; filePath: string; playlistName: string; metadata: any }> = [];
+    const peerVideoIds = new Set<string>();
+    for (const pl of peerPlaylists) {
+      for (const item of pl.items) {
+        if (item.hasFile) peerVideoIds.add(item.videoId);
+      }
+    }
+
+    const localPlaylists = getLocalPlaylists();
+    for (const lp of localPlaylists) {
+      const items = getPlaylistItems(lp.id);
+      for (const item of items) {
+        const lib = getLibraryItem(item.videoId);
+        if (!lib || !lib.filePath || lib.fileSize === 0) continue;
+        if (!fs.existsSync(lib.filePath)) continue;
+        if (peerVideoIds.has(item.videoId)) continue;
+        if (sendList.some(t => t.videoId === item.videoId)) continue;
+        sendList.push({
+          videoId: item.videoId,
+          title: lib.title,
+          fileSize: lib.fileSize,
+          filePath: lib.filePath,
+          playlistName: lp.name,
+          metadata: {
+            channel: lib.channel, thumbnailUrl: lib.thumbnailUrl || '', url: lib.url,
+            format: lib.format || 'mp4', resolution: lib.resolution || '',
+            duration: lib.duration,
+          },
+        });
+      }
+    }
+
+    return { receiveList, sendList };
+  }
+
+  private async processSync(
     client: SyncClient,
     sessionId: number,
-    transfers: Array<{ videoId: string; title: string; fileSize: number; playlistName: string }>,
+    receiveList: Array<{ videoId: string; title: string; fileSize: number; playlistName: string }>,
+    sendList: Array<{ videoId: string; title: string; fileSize: number; filePath?: string; playlistName: string; metadata?: any }>,
     transferIds: number[],
-    playlists: PeerPlaylistDetail[],
+    peerPlaylists: PeerPlaylistDetail[],
     outputDir: string
   ): Promise<void> {
     let completedFiles = 0;
     let totalTransferred = 0;
+    const totalFiles = receiveList.length + sendList.length;
+    const totalBytes = [...receiveList, ...sendList].reduce((s, t) => s + t.fileSize, 0);
     const startTime = Date.now();
 
-    for (let i = 0; i < transfers.length; i++) {
+    // Phase 1: RECEIVE files from peer
+    for (let i = 0; i < receiveList.length; i++) {
       if (this.activeAbort?.signal.aborted) break;
-
-      const transfer = transfers[i];
+      const transfer = receiveList[i];
       const transferId = transferIds[i];
-      const ext = this.guessExtension(transfer);
+
+      const peerItem = peerPlaylists.flatMap(p => p.items).find(v => v.videoId === transfer.videoId);
+      const ext = peerItem?.format || 'mp4';
       const destPath = path.join(outputDir, `${transfer.title.replace(/[<>:"/\\|?*]/g, '_')}.${ext}`);
       const partialPath = destPath + '.partial';
 
-      // Check for resume
       let resumeFrom = 0;
-      if (fs.existsSync(partialPath)) {
-        resumeFrom = fs.statSync(partialPath).size;
-      }
+      if (fs.existsSync(partialPath)) resumeFrom = fs.statSync(partialPath).size;
 
       updateSyncTransfer(transferId, { status: 'transferring', startedAt: new Date().toISOString() });
 
@@ -227,111 +277,129 @@ export class SyncManager {
           signal: this.activeAbort?.signal,
           resumeFrom,
           onProgress: (downloaded, total) => {
-            const elapsed = (Date.now() - startTime) / 1000;
-            const speed = totalTransferred + downloaded - resumeFrom > 0
-              ? (totalTransferred + downloaded - resumeFrom) / elapsed : 0;
-            const remaining = (transfers.reduce((s, t) => s + t.fileSize, 0) - totalTransferred - downloaded) / (speed || 1);
-
-            const progress: SyncProgress = {
-              sessionId,
-              currentVideoId: transfer.videoId,
-              currentTitle: transfer.title,
-              fileProgress: total > 0 ? Math.round((downloaded / total) * 100) : 0,
-              speed: this.formatSpeed(speed),
-              eta: this.formatEta(remaining),
-              downloadedBytes: downloaded,
-              totalFileBytes: total,
-              completedFiles,
-              totalFiles: transfers.length,
-              totalTransferredBytes: totalTransferred + downloaded,
-              totalSessionBytes: transfers.reduce((s, t) => s + t.fileSize, 0),
-              status: 'transferring',
-            };
-            this.sendToRenderer('sync:progress', progress);
+            this.emitProgress(sessionId, transfer, downloaded, total, completedFiles, totalFiles, totalTransferred, totalBytes, startTime);
           },
         });
 
-        // File downloaded successfully
         totalTransferred += transfer.fileSize;
         completedFiles++;
+        updateSyncTransfer(transferId, { status: 'completed', transferredBytes: transfer.fileSize, completedAt: new Date().toISOString() });
 
-        updateSyncTransfer(transferId, {
-          status: 'completed',
-          transferredBytes: transfer.fileSize,
-          completedAt: new Date().toISOString(),
-        });
-
-        // Upsert into library
-        const manifest = playlists.flatMap(p => p.items).find(v => v.videoId === transfer.videoId);
         upsertLibraryItem({
           videoId: transfer.videoId,
           title: transfer.title,
-          channel: manifest?.channel || '',
-          thumbnailUrl: manifest?.thumbnailUrl || '',
-          url: manifest?.url || `https://www.youtube.com/watch?v=${transfer.videoId}`,
-          format: manifest?.format || ext,
-          resolution: manifest?.resolution || '',
+          channel: peerItem?.channel || '',
+          thumbnailUrl: peerItem?.thumbnailUrl || '',
+          url: peerItem?.url || `https://www.youtube.com/watch?v=${transfer.videoId}`,
+          format: ext,
+          resolution: peerItem?.resolution || '',
           filePath: toRelativePath(destPath),
           fileSize: transfer.fileSize,
-          duration: manifest?.duration || 0,
+          duration: peerItem?.duration || 0,
           downloadedAt: new Date().toISOString(),
         });
 
-        // Add to local playlists
-        for (const pl of playlists) {
-          if (pl.items.some(item => item.videoId === transfer.videoId)) {
-            let localPlaylist = getLocalPlaylists().find(lp => lp.name === pl.name);
-            if (!localPlaylist) {
-              localPlaylist = createLocalPlaylist(pl.name, pl.description);
-            }
-            addPlaylistItem(localPlaylist.id, {
-              videoId: transfer.videoId,
-              title: transfer.title,
-              channel: manifest?.channel || '',
-              thumbnailUrl: manifest?.thumbnailUrl || '',
-              duration: manifest?.duration || 0,
-            });
-          }
+        // Add to local playlist
+        if (transfer.playlistName) {
+          let lp = getLocalPlaylists().find(p => p.name === transfer.playlistName);
+          if (!lp) lp = createLocalPlaylist(transfer.playlistName);
+          addPlaylistItem(lp.id, {
+            videoId: transfer.videoId,
+            title: transfer.title,
+            channel: peerItem?.channel || '',
+            thumbnailUrl: peerItem?.thumbnailUrl || '',
+            duration: peerItem?.duration || 0,
+          });
         }
 
         updateSyncSession(sessionId, { completedFiles, transferredBytes: totalTransferred });
-
       } catch (err: any) {
-        if (err.message === 'Aborted') {
-          updateSyncTransfer(transferId, { transferredBytes: resumeFrom });
-          break;
-        }
+        if (err.message === 'Aborted') break;
         updateSyncTransfer(transferId, { status: 'failed', completedAt: new Date().toISOString() });
-        console.error(`[sync] Transfer failed for ${transfer.videoId}:`, err.message);
+        console.error(`[sync] Receive failed for ${transfer.videoId}:`, err.message);
       }
     }
 
-    // Finalize session
+    // Phase 2: SEND files to peer
+    for (let i = 0; i < sendList.length; i++) {
+      if (this.activeAbort?.signal.aborted) break;
+      const transfer = sendList[i];
+      const transferId = transferIds[receiveList.length + i];
+
+      if (!transfer.filePath || !transfer.metadata) continue;
+
+      updateSyncTransfer(transferId, { status: 'transferring', startedAt: new Date().toISOString() });
+
+      try {
+        const result = await client.uploadFile(transfer.filePath, {
+          videoId: transfer.videoId,
+          title: transfer.title,
+          channel: transfer.metadata.channel,
+          thumbnailUrl: transfer.metadata.thumbnailUrl,
+          url: transfer.metadata.url,
+          format: transfer.metadata.format,
+          resolution: transfer.metadata.resolution,
+          fileSize: transfer.fileSize,
+          duration: transfer.metadata.duration,
+          playlistName: transfer.playlistName,
+        }, {
+          signal: this.activeAbort?.signal,
+          onProgress: (uploaded, total) => {
+            this.emitProgress(sessionId, transfer, uploaded, total, completedFiles, totalFiles, totalTransferred, totalBytes, startTime);
+          },
+        });
+
+        totalTransferred += transfer.fileSize;
+        completedFiles++;
+        updateSyncTransfer(transferId, { status: result.status === 'exists' ? 'skipped' : 'completed', transferredBytes: transfer.fileSize, completedAt: new Date().toISOString() });
+        updateSyncSession(sessionId, { completedFiles, transferredBytes: totalTransferred });
+      } catch (err: any) {
+        if (err.message === 'Aborted') break;
+        updateSyncTransfer(transferId, { status: 'failed', completedAt: new Date().toISOString() });
+        console.error(`[sync] Send failed for ${transfer.videoId}:`, err.message);
+      }
+    }
+
     if (!this.activeAbort?.signal.aborted) {
-      updateSyncSession(sessionId, {
-        status: 'completed',
-        completedFiles,
-        transferredBytes: totalTransferred,
-        completedAt: new Date().toISOString(),
-      });
-      this.sendToRenderer('sync:progress', {
-        sessionId, currentVideoId: '', currentTitle: '', fileProgress: 100,
-        speed: '', eta: '', downloadedBytes: 0, totalFileBytes: 0,
-        completedFiles, totalFiles: transfers.length,
-        totalTransferredBytes: totalTransferred,
-        totalSessionBytes: transfers.reduce((s, t) => s + t.fileSize, 0),
-        status: 'completed',
-      } as SyncProgress);
+      updateSyncSession(sessionId, { status: 'completed', completedFiles, transferredBytes: totalTransferred, completedAt: new Date().toISOString() });
+      this.emitCompleted(sessionId, completedFiles, totalFiles, totalTransferred, totalBytes);
     }
 
     this.activeSessionId = null;
     this.sendSessionUpdate(sessionId);
   }
 
-  private guessExtension(transfer: { videoId: string; title: string }): string {
-    const lib = getLibraryItem(transfer.videoId);
-    if (lib?.format) return lib.format;
-    return 'mp4';
+  private emitProgress(sessionId: number, transfer: { videoId: string; title: string; fileSize: number }, current: number, total: number, completedFiles: number, totalFiles: number, totalTransferred: number, totalBytes: number, startTime: number): void {
+    const elapsed = (Date.now() - startTime) / 1000;
+    const bytesTotal = totalTransferred + current;
+    const speed = elapsed > 0 ? bytesTotal / elapsed : 0;
+    const remaining = speed > 0 ? (totalBytes - bytesTotal) / speed : 0;
+
+    const progress: SyncProgress = {
+      sessionId,
+      currentVideoId: transfer.videoId,
+      currentTitle: transfer.title,
+      fileProgress: total > 0 ? Math.round((current / total) * 100) : 0,
+      speed: this.formatSpeed(speed),
+      eta: this.formatEta(remaining),
+      downloadedBytes: current,
+      totalFileBytes: total,
+      completedFiles,
+      totalFiles,
+      totalTransferredBytes: bytesTotal,
+      totalSessionBytes: totalBytes,
+      status: 'transferring',
+    };
+    this.sendToRenderer('sync:progress', progress);
+  }
+
+  private emitCompleted(sessionId: number, completedFiles: number, totalFiles: number, totalTransferred: number, totalBytes: number): void {
+    this.sendToRenderer('sync:progress', {
+      sessionId, currentVideoId: '', currentTitle: '', fileProgress: 100,
+      speed: '', eta: '', downloadedBytes: 0, totalFileBytes: 0,
+      completedFiles, totalFiles, totalTransferredBytes: totalTransferred,
+      totalSessionBytes: totalBytes, status: 'completed',
+    } as SyncProgress);
   }
 
   private formatSpeed(bytesPerSec: number): string {
@@ -349,9 +417,7 @@ export class SyncManager {
 
   private sendToRenderer(channel: string, data: any): void {
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) {
-        win.webContents.send(channel, data);
-      }
+      if (!win.isDestroyed()) win.webContents.send(channel, data);
     }
   }
 

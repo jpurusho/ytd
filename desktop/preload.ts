@@ -72,16 +72,12 @@ const api: ElectronAPI = {
     start: () => ipcRenderer.invoke('sync:start'),
     stop: () => ipcRenderer.invoke('sync:stop'),
     getPeers: () => ipcRenderer.invoke('sync:getPeers'),
-    getManifest: (peer: any) => ipcRenderer.invoke('sync:getManifest', peer),
-    getPlaylistDetail: (peer: any, playlistId: number) => ipcRenderer.invoke('sync:getPlaylistDetail', peer, playlistId),
-    startSync: (peer: any, playlistIds: number[]) => ipcRenderer.invoke('sync:startSync', peer, playlistIds),
+    getSyncPreview: (peer: any) => ipcRenderer.invoke('sync:getSyncPreview', peer),
+    startSync: (peer: any) => ipcRenderer.invoke('sync:startSync', peer),
     pauseSync: (sessionId: number) => ipcRenderer.invoke('sync:pauseSync', sessionId),
     resumeSync: (sessionId: number) => ipcRenderer.invoke('sync:resumeSync', sessionId),
     cancelSync: (sessionId: number) => ipcRenderer.invoke('sync:cancelSync', sessionId),
     getHistory: (limit?: number) => ipcRenderer.invoke('sync:getHistory', limit),
-    sharePlaylist: (playlistId: number) => ipcRenderer.invoke('sync:sharePlaylist', playlistId),
-    unsharePlaylist: (playlistId: number) => ipcRenderer.invoke('sync:unsharePlaylist', playlistId),
-    getSharedPlaylists: () => ipcRenderer.invoke('sync:getSharedPlaylists'),
     onProgress: (callback: any) => {
       const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
       ipcRenderer.on('sync:progress', handler);

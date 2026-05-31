@@ -255,16 +255,12 @@ export interface ElectronAPI {
     start: () => Promise<void>;
     stop: () => Promise<void>;
     getPeers: () => Promise<SyncPeerInfo[]>;
-    getManifest: (peer: SyncPeerInfo) => Promise<SyncManifest>;
-    getPlaylistDetail: (peer: SyncPeerInfo, playlistId: number) => Promise<SyncPlaylistDetail>;
-    startSync: (peer: SyncPeerInfo, playlistIds: number[]) => Promise<number>;
+    getSyncPreview: (peer: SyncPeerInfo) => Promise<SyncPreviewInfo>;
+    startSync: (peer: SyncPeerInfo) => Promise<number>;
     pauseSync: (sessionId: number) => Promise<void>;
     resumeSync: (sessionId: number) => Promise<void>;
     cancelSync: (sessionId: number) => Promise<void>;
     getHistory: (limit?: number) => Promise<SyncSessionRecord[]>;
-    sharePlaylist: (playlistId: number) => Promise<void>;
-    unsharePlaylist: (playlistId: number) => Promise<void>;
-    getSharedPlaylists: () => Promise<number[]>;
     onProgress: (callback: (progress: SyncProgressInfo) => void) => () => void;
     onSessionUpdate: (callback: (session: SyncSessionRecord) => void) => () => void;
     onPeerFound: (callback: (peer: SyncPeerInfo) => void) => () => void;
@@ -327,6 +323,11 @@ export interface SyncProgressInfo {
   totalTransferredBytes: number;
   totalSessionBytes: number;
   status: 'transferring' | 'completed' | 'paused' | 'failed' | 'cancelled';
+}
+
+export interface SyncPreviewInfo {
+  receive: { count: number; totalSize: number; playlists: string[] };
+  send: { count: number; totalSize: number; playlists: string[] };
 }
 
 export interface SyncSessionRecord {

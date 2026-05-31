@@ -3,9 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { app } from 'electron';
-import { getLibraryItems, getLibraryItem, resolveFilePath, getPlaylistItems, getLocalPlaylists, getLocalPlaylist, getLibraryStats } from '../database';
-import { getSharedPlaylistIds, getInstanceId } from './sync-database';
-import type { PeerInfo, PeerManifest, PeerPlaylistDetail, PeerVideoInfo } from './sync-types';
+import { getLibraryItem, resolveFilePath, getPlaylistItems, getLocalPlaylists, getLocalPlaylist, getLibraryStats, getSetting, upsertLibraryItem, toRelativePath, addPlaylistItem, createLocalPlaylist } from '../database';
+import { getInstanceId } from './sync-database';
+import type { PeerInfo, PeerManifest, PeerPlaylistDetail } from './sync-types';
 
 export class SyncServer {
   private server: http.Server | null = null;
@@ -40,17 +40,20 @@ export class SyncServer {
 
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    if (method !== 'GET') {
-      res.writeHead(405);
+    if (method === 'OPTIONS') {
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.writeHead(204);
       res.end();
       return;
     }
 
     try {
-      if (url === '/info') return this.handleInfo(res);
-      if (url === '/manifest') return this.handleManifest(res);
-      if (url.startsWith('/playlist/')) return this.handlePlaylist(url, res);
-      if (url.startsWith('/file/')) return this.handleFile(url, req, res);
+      if (method === 'GET' && url === '/info') return this.handleInfo(res);
+      if (method === 'GET' && url === '/manifest') return this.handleManifest(res);
+      if (method === 'GET' && url.startsWith('/playlist/')) return this.handlePlaylist(url, res);
+      if (method === 'GET' && url.startsWith('/file/')) return this.handleFile(url, req, res);
+      if (method === 'POST' && url === '/upload') return this.handleUpload(req, res);
       res.writeHead(404);
       res.end('Not found');
     } catch (err: any) {
@@ -75,21 +78,25 @@ export class SyncServer {
   }
 
   private handleManifest(res: http.ServerResponse): void {
-    const sharedIds = getSharedPlaylistIds();
     const allPlaylists = getLocalPlaylists();
     const stats = getLibraryStats();
 
     const playlists = allPlaylists
-      .filter(pl => sharedIds.includes(pl.id))
       .map(pl => {
         const items = getPlaylistItems(pl.id);
         let totalSize = 0;
+        let hasAnyFile = false;
         for (const item of items) {
           const lib = getLibraryItem(item.videoId);
-          if (lib && lib.fileSize > 0) totalSize += lib.fileSize;
+          if (lib && lib.filePath && lib.fileSize > 0 && fs.existsSync(lib.filePath)) {
+            totalSize += lib.fileSize;
+            hasAnyFile = true;
+          }
         }
+        if (!hasAnyFile) return null;
         return { id: pl.id, name: pl.name, itemCount: items.length, totalSize };
-      });
+      })
+      .filter(Boolean) as Array<{ id: number; name: string; itemCount: number; totalSize: number }>;
 
     const manifest: PeerManifest = {
       peer: {
@@ -113,13 +120,6 @@ export class SyncServer {
     if (isNaN(playlistId)) {
       res.writeHead(400);
       res.end('Invalid playlist ID');
-      return;
-    }
-
-    const sharedIds = getSharedPlaylistIds();
-    if (!sharedIds.includes(playlistId)) {
-      res.writeHead(403);
-      res.end('Playlist not shared');
       return;
     }
 
@@ -203,5 +203,79 @@ export class SyncServer {
       'Content-Disposition': `attachment; filename="${path.basename(filePath)}"`,
     });
     fs.createReadStream(filePath).pipe(res);
+  }
+
+  private handleUpload(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const videoId = req.headers['x-video-id'] as string;
+    const title = decodeURIComponent(req.headers['x-title'] as string || '');
+    const channel = decodeURIComponent(req.headers['x-channel'] as string || '');
+    const thumbnailUrl = req.headers['x-thumbnail-url'] as string || '';
+    const url = req.headers['x-url'] as string || '';
+    const format = req.headers['x-format'] as string || 'mp4';
+    const resolution = req.headers['x-resolution'] as string || '';
+    const fileSize = parseInt(req.headers['x-file-size'] as string || '0', 10);
+    const duration = parseInt(req.headers['x-duration'] as string || '0', 10);
+    const playlistName = decodeURIComponent(req.headers['x-playlist-name'] as string || '');
+
+    if (!videoId || !title) {
+      res.writeHead(400);
+      res.end('Missing videoId or title');
+      return;
+    }
+
+    const existing = getLibraryItem(videoId);
+    if (existing && existing.filePath && existing.fileSize === fileSize && fs.existsSync(existing.filePath)) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'exists' }));
+      return;
+    }
+
+    const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
+    const safeName = title.replace(/[<>:"/\\|?*]/g, '_');
+    const destPath = path.join(outputDir, `${safeName}.${format}`);
+    const partialPath = destPath + '.partial';
+
+    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+    const writeStream = fs.createWriteStream(partialPath);
+
+    req.pipe(writeStream);
+
+    req.on('end', () => {
+      writeStream.close(() => {
+        try {
+          if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+          fs.renameSync(partialPath, destPath);
+
+          upsertLibraryItem({
+            videoId, title, channel, thumbnailUrl, url,
+            format, resolution,
+            filePath: toRelativePath(destPath),
+            fileSize, duration,
+            downloadedAt: new Date().toISOString(),
+          });
+
+          if (playlistName) {
+            const localPlaylists = getLocalPlaylists();
+            let lp = localPlaylists.find(p => p.name === playlistName);
+            if (!lp) lp = createLocalPlaylist(playlistName);
+            addPlaylistItem(lp.id, { videoId, title, channel, thumbnailUrl, duration });
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok' }));
+        } catch (err: any) {
+          res.writeHead(500);
+          res.end(err.message);
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      writeStream.close();
+      try { fs.unlinkSync(partialPath); } catch {}
+      res.writeHead(500);
+      res.end(err.message);
+    });
   }
 }

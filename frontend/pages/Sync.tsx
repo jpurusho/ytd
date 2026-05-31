@@ -1,27 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, Button, LinearProgress, Chip, IconButton,
-  Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem,
-  ListItemText, Checkbox, CircularProgress, Alert,
+  Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Alert,
 } from '@mui/material';
 import SyncIcon from '@mui/icons-material/Sync';
 import ComputerIcon from '@mui/icons-material/Computer';
 import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CancelIcon from '@mui/icons-material/Cancel';
-import ShareIcon from '@mui/icons-material/Share';
-import type { SyncPeerInfo, SyncManifest, SyncProgressInfo, SyncSessionRecord, LocalPlaylist } from '@shared/types';
+import DownloadIcon from '@mui/icons-material/Download';
+import UploadIcon from '@mui/icons-material/Upload';
+import type { SyncPeerInfo, SyncPreviewInfo, SyncProgressInfo, SyncSessionRecord } from '@shared/types';
 
 export default function Sync() {
   const [peers, setPeers] = useState<SyncPeerInfo[]>([]);
   const [progress, setProgress] = useState<SyncProgressInfo | null>(null);
   const [history, setHistory] = useState<SyncSessionRecord[]>([]);
-  const [sharedPlaylists, setSharedPlaylists] = useState<Set<number>>(new Set());
-  const [allPlaylists, setAllPlaylists] = useState<LocalPlaylist[]>([]);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [connectPeer, setConnectPeer] = useState<SyncPeerInfo | null>(null);
-  const [manifest, setManifest] = useState<SyncManifest | null>(null);
-  const [selectedPlaylists, setSelectedPlaylists] = useState<Set<number>>(new Set());
+  const [previewPeer, setPreviewPeer] = useState<SyncPeerInfo | null>(null);
+  const [preview, setPreview] = useState<SyncPreviewInfo | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -48,16 +44,12 @@ export default function Sync() {
   }, []);
 
   async function loadData() {
-    const [peerList, hist, shared, playlists] = await Promise.all([
+    const [peerList, hist] = await Promise.all([
       window.api.sync.getPeers(),
       window.api.sync.getHistory(10),
-      window.api.sync.getSharedPlaylists(),
-      window.api.playlists.getAll(),
     ]);
     setPeers(peerList);
     setHistory(hist);
-    setSharedPlaylists(new Set(shared));
-    setAllPlaylists(playlists);
   }
 
   async function loadHistory() {
@@ -65,29 +57,31 @@ export default function Sync() {
     setHistory(hist);
   }
 
-  async function handleConnect(peer: SyncPeerInfo) {
-    setConnectPeer(peer);
-    setManifest(null);
-    setSelectedPlaylists(new Set());
+  async function handleSyncClick(peer: SyncPeerInfo) {
+    setPreviewPeer(peer);
+    setPreview(null);
     setError('');
     setLoading(true);
     try {
-      const m = await window.api.sync.getManifest(peer);
-      setManifest(m);
+      const p = await window.api.sync.getSyncPreview(peer);
+      setPreview(p);
     } catch (err: any) {
       setError(`Failed to connect: ${err.message}`);
+      setPreviewPeer(null);
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleStartSync() {
-    if (!connectPeer || selectedPlaylists.size === 0) return;
+  async function handleConfirmSync() {
+    if (!previewPeer) return;
     setError('');
     setSyncing(true);
-    setConnectPeer(null);
+    const peer = previewPeer;
+    setPreviewPeer(null);
+    setPreview(null);
     try {
-      await window.api.sync.startSync(connectPeer, Array.from(selectedPlaylists));
+      await window.api.sync.startSync(peer);
     } catch (err: any) {
       setError(`Sync failed: ${err.message}`);
       setSyncing(false);
@@ -109,18 +103,6 @@ export default function Sync() {
     if (progress?.sessionId) await window.api.sync.cancelSync(progress.sessionId);
   }
 
-  async function toggleShare(playlistId: number) {
-    const next = new Set(sharedPlaylists);
-    if (next.has(playlistId)) {
-      next.delete(playlistId);
-      await window.api.sync.unsharePlaylist(playlistId);
-    } else {
-      next.add(playlistId);
-      await window.api.sync.sharePlaylist(playlistId);
-    }
-    setSharedPlaylists(next);
-  }
-
   function formatSize(bytes: number): string {
     if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
     if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
@@ -132,14 +114,11 @@ export default function Sync() {
     return new Date(iso + (iso.endsWith('Z') ? '' : 'Z')).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
+  const totalPreviewCount = (preview?.receive.count || 0) + (preview?.send.count || 0);
+
   return (
     <Box sx={{ p: 3, height: '100%', overflow: 'auto' }}>
-      <Box display="flex" alignItems="center" justifyContent="space-between" mb={3}>
-        <Typography variant="h6" fontWeight={600}>Sync</Typography>
-        <Button size="small" variant="outlined" startIcon={<ShareIcon />} onClick={() => setShareOpen(true)}>
-          Sharing ({sharedPlaylists.size} playlists)
-        </Button>
-      </Box>
+      <Typography variant="h6" fontWeight={600} sx={{ mb: 3 }}>Sync</Typography>
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
@@ -147,8 +126,8 @@ export default function Sync() {
       {syncing && progress && progress.status === 'transferring' && (
         <Paper sx={{ p: 2, mb: 3, borderRadius: 2, border: '1px solid', borderColor: 'primary.main' }} elevation={0}>
           <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
-            <Typography variant="subtitle2">
-              Syncing: {progress.currentTitle}
+            <Typography variant="subtitle2" noWrap sx={{ maxWidth: '70%' }}>
+              {progress.currentTitle}
             </Typography>
             <Box display="flex" gap={0.5}>
               <IconButton size="small" onClick={handlePause} title="Pause"><PauseIcon fontSize="small" /></IconButton>
@@ -167,12 +146,12 @@ export default function Sync() {
         </Paper>
       )}
 
-      {/* Paused session */}
+      {/* Paused */}
       {progress && progress.status === 'paused' && (
         <Paper sx={{ p: 2, mb: 3, borderRadius: 2, border: '1px solid', borderColor: 'warning.main' }} elevation={0}>
           <Box display="flex" alignItems="center" justifyContent="space-between">
             <Typography variant="subtitle2" color="warning.main">
-              Sync paused · {progress.completedFiles}/{progress.totalFiles} files
+              Paused · {progress.completedFiles}/{progress.totalFiles} files
             </Typography>
             <Box display="flex" gap={0.5}>
               <Button size="small" startIcon={<PlayArrowIcon />} onClick={handleResume}>Resume</Button>
@@ -187,7 +166,7 @@ export default function Sync() {
       {peers.length === 0 ? (
         <Paper sx={{ p: 3, mb: 3, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }} elevation={0}>
           <Typography color="text.secondary" variant="body2">
-            No peers found on this network. Make sure another device is running ytd on the same Wi-Fi.
+            No peers found. Make sure another device is running ytd on the same Wi-Fi.
           </Typography>
         </Paper>
       ) : (
@@ -198,11 +177,11 @@ export default function Sync() {
               <Box flex={1}>
                 <Typography variant="body2" fontWeight={500}>{peer.deviceName}</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {peer.address} · {peer.libraryCount} videos · v{peer.version}
+                  {peer.address} · {peer.libraryCount} videos
                 </Typography>
               </Box>
-              <Button size="small" variant="outlined" onClick={() => handleConnect(peer)} disabled={syncing}>
-                Browse Playlists
+              <Button size="small" variant="contained" startIcon={<SyncIcon />} onClick={() => handleSyncClick(peer)} disabled={syncing}>
+                Sync
               </Button>
             </Paper>
           ))}
@@ -218,9 +197,7 @@ export default function Sync() {
               <Paper key={session.id} sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 2 }} elevation={0}>
                 <SyncIcon fontSize="small" color={session.status === 'completed' ? 'success' : session.status === 'failed' ? 'error' : 'disabled'} />
                 <Box flex={1}>
-                  <Typography variant="body2">
-                    {session.direction === 'receive' ? 'From' : 'To'} {session.peerDeviceName} · {session.playlistsSynced}
-                  </Typography>
+                  <Typography variant="body2">{session.peerDeviceName} · {session.playlistsSynced}</Typography>
                   <Typography variant="caption" color="text.secondary">
                     {formatDate(session.startedAt)} · {session.completedFiles}/{session.totalFiles} files · {formatSize(session.transferredBytes)}
                   </Typography>
@@ -232,68 +209,46 @@ export default function Sync() {
         </>
       )}
 
-      {/* Playlist Selector Dialog */}
-      <Dialog open={!!connectPeer} onClose={() => setConnectPeer(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {connectPeer?.deviceName} — Available Playlists
-        </DialogTitle>
+      {/* Sync Preview Dialog */}
+      <Dialog open={!!previewPeer} onClose={() => { setPreviewPeer(null); setPreview(null); }} maxWidth="sm" fullWidth>
+        <DialogTitle>Sync with {previewPeer?.deviceName}</DialogTitle>
         <DialogContent>
           {loading && <Box display="flex" justifyContent="center" py={3}><CircularProgress /></Box>}
-          {!loading && manifest && (
-            <List dense>
-              {manifest.playlists.map(pl => (
-                <ListItem key={pl.id} sx={{ borderRadius: 1 }}>
-                  <Checkbox
-                    checked={selectedPlaylists.has(pl.id)}
-                    onChange={() => {
-                      const next = new Set(selectedPlaylists);
-                      if (next.has(pl.id)) next.delete(pl.id); else next.add(pl.id);
-                      setSelectedPlaylists(next);
-                    }}
-                  />
-                  <ListItemText
-                    primary={pl.name}
-                    secondary={`${pl.itemCount} videos · ${formatSize(pl.totalSize)}`}
-                  />
-                </ListItem>
-              ))}
-              {manifest.playlists.length === 0 && (
-                <Typography color="text.secondary" textAlign="center" py={2}>
-                  No shared playlists. The peer needs to share playlists first.
-                </Typography>
+          {!loading && preview && (
+            <Box display="flex" flexDirection="column" gap={2} py={1}>
+              {preview.receive.count > 0 && (
+                <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'success.main' }} elevation={0}>
+                  <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+                    <DownloadIcon fontSize="small" color="success" />
+                    <Typography variant="subtitle2">Receive {preview.receive.count} files ({formatSize(preview.receive.totalSize)})</Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">
+                    From: {preview.receive.playlists.join(', ')}
+                  </Typography>
+                </Paper>
               )}
-            </List>
+              {preview.send.count > 0 && (
+                <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'info.main' }} elevation={0}>
+                  <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+                    <UploadIcon fontSize="small" color="info" />
+                    <Typography variant="subtitle2">Send {preview.send.count} files ({formatSize(preview.send.totalSize)})</Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">
+                    From: {preview.send.playlists.join(', ')}
+                  </Typography>
+                </Paper>
+              )}
+              {totalPreviewCount === 0 && (
+                <Alert severity="success">Already in sync! Both devices have the same content.</Alert>
+              )}
+            </Box>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConnectPeer(null)}>Cancel</Button>
-          <Button variant="contained" disabled={selectedPlaylists.size === 0} onClick={handleStartSync}>
-            Start Sync ({selectedPlaylists.size} playlists)
+          <Button onClick={() => { setPreviewPeer(null); setPreview(null); }}>Cancel</Button>
+          <Button variant="contained" disabled={totalPreviewCount === 0 || loading} onClick={handleConfirmSync}>
+            Start Sync
           </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Share Settings Dialog */}
-      <Dialog open={shareOpen} onClose={() => setShareOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Share Playlists</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Select which playlists other devices can see and sync from you.
-          </Typography>
-          <List dense>
-            {allPlaylists.map(pl => (
-              <ListItem key={pl.id} sx={{ borderRadius: 1 }}>
-                <Checkbox checked={sharedPlaylists.has(pl.id)} onChange={() => toggleShare(pl.id)} />
-                <ListItemText primary={pl.name} />
-              </ListItem>
-            ))}
-            {allPlaylists.length === 0 && (
-              <Typography color="text.secondary" textAlign="center">No playlists created yet.</Typography>
-            )}
-          </List>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShareOpen(false)}>Done</Button>
         </DialogActions>
       </Dialog>
     </Box>
