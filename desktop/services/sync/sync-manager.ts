@@ -2,6 +2,23 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app, BrowserWindow } from 'electron';
+
+const MAX_LOG_SIZE = 2 * 1024 * 1024; // 2MB
+
+export function syncLog(msg: string): void {
+  const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
+  const logPath = path.join(outputDir, 'ytd-sync.log');
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  console.log(`[sync] ${msg}`);
+  try {
+    if (fs.existsSync(logPath) && fs.statSync(logPath).size > MAX_LOG_SIZE) {
+      const oldPath = logPath + '.old';
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      fs.renameSync(logPath, oldPath);
+    }
+    fs.appendFileSync(logPath, line);
+  } catch {}
+}
 import { SyncDiscovery } from './sync-discovery';
 import { SyncServer } from './sync-server';
 import { SyncClient } from './sync-client';
@@ -131,7 +148,7 @@ export class SyncManager {
 
     this.processSync(client, sessionId, receiveList, sendList, transferIds, peerPlaylists, outputDir)
       .catch(err => {
-        console.error('[sync] processSync failed:', err);
+        syncLog(`processSync FATAL: ${err.message}`);
         updateSyncSession(sessionId, { status: 'failed', error: err.message, completedAt: new Date().toISOString() });
         this.sendSessionUpdate(sessionId);
       });
@@ -216,23 +233,23 @@ export class SyncManager {
     // RECEIVE: videos peer has that we don't
     const receiveList: Array<{ videoId: string; title: string; fileSize: number; playlistName: string }> = [];
     for (const pl of peerPlaylists) {
-      console.log(`[sync] Peer playlist "${pl.name}": ${pl.items.length} items`);
+      syncLog(`Peer playlist "${pl.name}": ${pl.items.length} items`);
       for (const item of pl.items) {
         if (!item.hasFile || item.fileSize === 0) {
-          console.log(`[sync]   SKIP ${item.videoId} "${item.title}" — hasFile=${item.hasFile} fileSize=${item.fileSize}`);
+          syncLog(`  SKIP ${item.videoId} "${item.title}" — hasFile=${item.hasFile} fileSize=${item.fileSize}`);
           continue;
         }
         if (receiveList.some(t => t.videoId === item.videoId)) continue;
         const local = getLibraryItem(item.videoId);
         if (local && local.filePath && local.fileSize === item.fileSize && fs.existsSync(local.filePath)) {
-          console.log(`[sync]   SKIP ${item.videoId} — already have locally (${local.fileSize} bytes)`);
+          syncLog(`  SKIP ${item.videoId} — already have locally (${local.fileSize} bytes)`);
           continue;
         }
-        console.log(`[sync]   RECEIVE ${item.videoId} "${item.title}" (${item.fileSize} bytes)`);
+        syncLog(`  RECEIVE ${item.videoId} "${item.title}" (${item.fileSize} bytes)`);
         receiveList.push({ videoId: item.videoId, title: item.title, fileSize: item.fileSize, playlistName: pl.name });
       }
     }
-    console.log(`[sync] Total to receive: ${receiveList.length}`);
+    syncLog(`Total to receive: ${receiveList.length}`);
 
     // SEND: videos we have that peer doesn't
     const sendList: Array<{ videoId: string; title: string; fileSize: number; filePath: string; playlistName: string; metadata: any }> = [];
@@ -300,7 +317,7 @@ export class SyncManager {
       if (fs.existsSync(partialPath)) resumeFrom = fs.statSync(partialPath).size;
 
       updateSyncTransfer(transferId, { status: 'transferring', startedAt: new Date().toISOString() });
-      console.log(`[sync] Downloading ${transfer.videoId} → ${destPath} (resume=${resumeFrom})`);
+      syncLog(`Downloading ${transfer.videoId} → ${destPath} (resume=${resumeFrom})`);
 
       try {
         await client.downloadFile(transfer.videoId, destPath, {
@@ -345,8 +362,10 @@ export class SyncManager {
         updateSyncSession(sessionId, { completedFiles, transferredBytes: totalTransferred });
       } catch (err: any) {
         if (err.message === 'Aborted') break;
+        const errMsg = err.message || 'Unknown error';
         updateSyncTransfer(transferId, { status: 'failed', completedAt: new Date().toISOString() });
-        console.error(`[sync] Receive FAILED for ${transfer.videoId} "${transfer.title}":`, err.message, err.stack);
+        updateSyncSession(sessionId, { error: `Failed: ${transfer.title} — ${errMsg}` });
+        syncLog(`FAILED ${transfer.videoId} "${transfer.title}": ${errMsg}`);
       }
     }
 
@@ -386,17 +405,15 @@ export class SyncManager {
       } catch (err: any) {
         if (err.message === 'Aborted') break;
         updateSyncTransfer(transferId, { status: 'failed', completedAt: new Date().toISOString() });
-        console.error(`[sync] Send failed for ${transfer.videoId}:`, err.message);
+        syncLog(`Send FAILED ${transfer.videoId}: ${err.message}`);
       }
     }
 
     if (!this.activeAbort?.signal.aborted) {
       const finalStatus = completedFiles === 0 && totalFiles > 0 ? 'failed' : 'completed';
-      updateSyncSession(sessionId, { status: finalStatus, completedFiles, transferredBytes: totalTransferred, completedAt: new Date().toISOString() });
+      const errorMsg = finalStatus === 'failed' ? `All ${totalFiles} transfers failed. Check that sender is running and files exist.` : undefined;
+      updateSyncSession(sessionId, { status: finalStatus, completedFiles, transferredBytes: totalTransferred, completedAt: new Date().toISOString(), ...(errorMsg ? { error: errorMsg } : {}) });
       this.emitCompleted(sessionId, completedFiles, totalFiles, totalTransferred, totalBytes);
-      if (finalStatus === 'failed') {
-        console.error(`[sync] Session ${sessionId} failed: 0/${totalFiles} files transferred`);
-      }
     }
 
     this.activeSessionId = null;

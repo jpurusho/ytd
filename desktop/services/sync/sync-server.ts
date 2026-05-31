@@ -7,6 +7,23 @@ import { getLibraryItem, resolveFilePath, getPlaylistItems, getLocalPlaylists, g
 import { getInstanceId } from './sync-database';
 import type { PeerInfo, PeerManifest, PeerPlaylistDetail } from './sync-types';
 
+const MAX_LOG_SIZE = 2 * 1024 * 1024; // 2MB
+
+function serverLog(msg: string): void {
+  const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
+  const logPath = path.join(outputDir, 'ytd-sync.log');
+  const line = `[${new Date().toISOString()}] [server] ${msg}\n`;
+  console.log(`[sync-server] ${msg}`);
+  try {
+    if (fs.existsSync(logPath) && fs.statSync(logPath).size > MAX_LOG_SIZE) {
+      const oldPath = logPath + '.old';
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      fs.renameSync(logPath, oldPath);
+    }
+    fs.appendFileSync(logPath, line);
+  } catch {}
+}
+
 export class SyncServer {
   private server: http.Server | null = null;
   private port = 0;
@@ -50,14 +67,14 @@ export class SyncServer {
 
     try {
       if (method === 'GET' && url === '/info') return this.handleInfo(res);
-      if (method === 'GET' && url === '/manifest') return this.handleManifest(res);
-      if (method === 'GET' && url.startsWith('/playlist/')) return this.handlePlaylist(url, res);
-      if (method === 'GET' && url.startsWith('/file/')) return this.handleFile(url, req, res);
-      if (method === 'POST' && url === '/upload') return this.handleUpload(req, res);
+      if (method === 'GET' && url === '/manifest') { serverLog(`${req.socket.remoteAddress} → GET /manifest`); return this.handleManifest(res); }
+      if (method === 'GET' && url.startsWith('/playlist/')) { serverLog(`${req.socket.remoteAddress} → GET ${url}`); return this.handlePlaylist(url, res); }
+      if (method === 'GET' && url.startsWith('/file/')) { serverLog(`${req.socket.remoteAddress} → GET ${url}`); return this.handleFile(url, req, res); }
+      if (method === 'POST' && url === '/upload') { serverLog(`${req.socket.remoteAddress} → POST /upload`); return this.handleUpload(req, res); }
       res.writeHead(404);
       res.end('Not found');
     } catch (err: any) {
-      console.error('[sync-server] Error:', err.message);
+      serverLog(`ERROR: ${err.message}`);
       res.writeHead(500);
       res.end('Internal error');
     }
@@ -162,6 +179,7 @@ export class SyncServer {
     const videoId = decodeURIComponent(url.replace('/file/', ''));
     const lib = getLibraryItem(videoId);
     if (!lib || !lib.filePath) {
+      serverLog(`FILE 404: ${videoId} — no library entry or filePath`);
       res.writeHead(404);
       res.end('File not found');
       return;
@@ -169,10 +187,13 @@ export class SyncServer {
 
     const filePath = lib.filePath;
     if (!fs.existsSync(filePath)) {
+      serverLog(`FILE 404: ${videoId} — path doesn't exist: ${filePath}`);
       res.writeHead(404);
       res.end('File not found on disk');
       return;
     }
+
+    serverLog(`FILE 200: ${videoId} → ${filePath} (${lib.fileSize} bytes)`);
 
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;

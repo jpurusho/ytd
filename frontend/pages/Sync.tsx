@@ -199,13 +199,18 @@ export default function Sync() {
           </Box>
           <Box display="flex" flexDirection="column" gap={1}>
             {history.map(session => (
-              <Paper key={session.id} sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 2 }} elevation={0}>
+              <Paper key={session.id} sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: session.status === 'failed' ? 'error.main' : 'divider', display: 'flex', alignItems: 'center', gap: 2 }} elevation={0}>
                 <SyncIcon fontSize="small" color={session.status === 'completed' ? 'success' : session.status === 'failed' ? 'error' : 'disabled'} />
                 <Box flex={1}>
                   <Typography variant="body2">{session.peerDeviceName} · {session.playlistsSynced}</Typography>
                   <Typography variant="caption" color="text.secondary">
                     {formatDate(session.startedAt)} · {session.completedFiles}/{session.totalFiles} files · {formatSize(session.transferredBytes)}
                   </Typography>
+                  {session.error && (
+                    <Typography variant="caption" color="error.main" display="block">
+                      {session.error}
+                    </Typography>
+                  )}
                 </Box>
                 <Chip label={session.status} size="small" variant="outlined" color={session.status === 'completed' ? 'success' : session.status === 'failed' ? 'error' : 'default'} />
               </Paper>
