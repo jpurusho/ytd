@@ -8,11 +8,11 @@ import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import type { DownloadRecord } from '@shared/types';
+import type { DownloadRecord, LibraryItem } from '@shared/types';
 
 interface Props {
   open: boolean;
-  record: DownloadRecord | null;
+  record: DownloadRecord | LibraryItem | null;
   onClose: () => void;
 }
 
@@ -48,8 +48,9 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
   const resizing = useRef<string | null>(null);
   const dragStart = useRef({ mx: 0, my: 0, x: 0, y: 0, w: 0, h: 0 });
 
-  const isPlayable = record ? canPlayInline(record.format) : false;
-  const isAudioOnly = record?.format === 'mp3';
+  const recordFormat = record?.format || 'mp4';
+  const isPlayable = record ? canPlayInline(recordFormat) : false;
+  const isAudioOnly = recordFormat === 'mp3';
 
   useEffect(() => {
     if (open && record?.filePath) {
@@ -66,7 +67,7 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
           setLoading(false);
         } else if (result.url) {
           if (!isPlayable) {
-            setError(`Cannot play .${record.format} files inline. Use "Open in system player" instead.`);
+            setError(`Cannot play .${recordFormat} files inline. Use "Open in system player" instead.`);
             setLoading(false);
           } else {
             setVideoUrl(result.url);

@@ -59,7 +59,7 @@ export default function Dashboard({ user, onLogout }: Props) {
       case 'playlists': return <Playlists onDownload={handleDownload} openPlaylistId={selectedPlaylistId} onPlaylistOpened={() => setSelectedPlaylistId(null)} />;
       case 'downloads': return <Downloads />;
       case 'library': return <Library />;
-      case 'history': return <History />;
+      case 'history': return <Library />;
       case 'sync': return <Sync />;
       case 'settings': return <Settings />;
     }

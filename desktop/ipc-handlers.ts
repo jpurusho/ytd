@@ -14,7 +14,7 @@ import {
   createLocalPlaylist, getLocalPlaylists, getLocalPlaylist, updateLocalPlaylist, deleteLocalPlaylist,
   addPlaylistItem, removePlaylistItem, getPlaylistItems, reorderPlaylistItem,
   getLibraryItems, getLibraryItem, deleteLibraryItems, getRecentLibraryItems, getLibraryStats,
-  upsertLibraryItem,
+  upsertLibraryItem, toRelativePath,
 } from './services/database';
 import { SyncManager } from './services/sync/sync-manager';
 import type { DownloadRequest, LocalPlaylistVideoItem } from '../shared/types';
@@ -148,7 +148,6 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('downloads:rescanFolder', async (_event, folderPath: string) => {
     const MEDIA_EXTS = new Set(['.mp4', '.webm', '.mkv', '.mp3', '.m4a', '.ogg', '.wav', '.mov', '.avi']);
 
-    // Collect all media files in the folder (one level deep)
     const files: string[] = [];
     try {
       for (const entry of fs.readdirSync(folderPath)) {
@@ -160,31 +159,48 @@ export function registerIpcHandlers(): void {
       return { updated: 0, stillMissing: 0, error: 'Could not read folder' };
     }
 
-    // Normalise a string the same way yt-dlp does: collapse special chars to spaces/underscores
     function normalise(s: string): string {
       return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
-    const history = getDownloadHistory(100000);
+    // Rescan library items (primary source of truth)
+    const libraryItems = getLibraryItems({ limit: 100000 });
     let updated = 0;
     let stillMissing = 0;
 
-    for (const record of history) {
-      if (record.filePath && fs.existsSync(record.filePath)) continue; // already fine
+    for (const item of libraryItems) {
+      if (item.filePath && fs.existsSync(item.filePath)) continue;
 
-      // Try to find a file whose basename matches the record title
-      const titleNorm = normalise(record.title);
+      const titleNorm = normalise(item.title);
       const match = files.find((f) => {
         const base = normalise(path.basename(f, path.extname(f)));
         return base === titleNorm || base.startsWith(titleNorm.slice(0, 30));
       });
 
       if (match) {
-        updateDownloadFilePath(record.id, match);
+        upsertLibraryItem({
+          videoId: item.videoId,
+          title: item.title,
+          url: item.url || `https://www.youtube.com/watch?v=${item.videoId}`,
+          filePath: toRelativePath(match),
+          fileSize: fs.statSync(match).size,
+        });
         updated++;
-      } else {
+      } else if (item.fileSize > 0) {
         stillMissing++;
       }
+    }
+
+    // Also update old downloads table for backward compat
+    const history = getDownloadHistory(100000);
+    for (const record of history) {
+      if (record.filePath && fs.existsSync(record.filePath)) continue;
+      const titleNorm = normalise(record.title);
+      const match = files.find((f) => {
+        const base = normalise(path.basename(f, path.extname(f)));
+        return base === titleNorm || base.startsWith(titleNorm.slice(0, 30));
+      });
+      if (match) updateDownloadFilePath(record.id, match);
     }
 
     return { updated, stillMissing };
