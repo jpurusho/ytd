@@ -48,8 +48,36 @@ export class YouTubeApiService {
 
   async getPlaylists(): Promise<PlaylistInfo[]> {
     const items: PlaylistInfo[] = [];
-    let pageToken: string | undefined;
 
+    // First, add Watch Later (special playlist with ID "WL")
+    try {
+      const wlResponse = await this.youtube.playlistItems.list({
+        part: ['snippet'],
+        playlistId: 'WL',
+        maxResults: 1,
+      });
+      // If we can access it, add it to the list
+      if (wlResponse.data.items && wlResponse.data.items.length >= 0) {
+        // Get total count
+        const countResponse = await this.youtube.playlistItems.list({
+          part: ['id'],
+          playlistId: 'WL',
+          maxResults: 50,
+        });
+        items.push({
+          id: 'WL',
+          title: 'Watch Later',
+          itemCount: countResponse.data.pageInfo?.totalResults || 0,
+          thumbnail: '',
+          description: 'Your Watch Later videos',
+        });
+      }
+    } catch {
+      // Watch Later might not be accessible or empty, skip silently
+    }
+
+    // Then fetch user-created playlists
+    let pageToken: string | undefined;
     do {
       const response = await this.youtube.playlists.list({
         part: ['snippet', 'contentDetails'],
