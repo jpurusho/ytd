@@ -94,7 +94,9 @@ export default function FormatSelector({ open, video, onClose, onDownload }: Pro
           if (data.event === 'onReady' || data.event === 'initialDelivery') {
             setPlayerReady(true);
           }
-        } catch {}
+        } catch {
+          // Ignore parse errors - YouTube iframe sends many messages, we only care about specific events
+        }
       }
     }
     window.addEventListener('message', handleMessage);

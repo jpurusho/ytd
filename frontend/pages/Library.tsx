@@ -45,7 +45,10 @@ function loadVisibleColumns(): Set<SortField> {
   try {
     const saved = localStorage.getItem('ytd-library-columns');
     if (saved) return new Set(JSON.parse(saved));
-  } catch {}
+  } catch (error) {
+    // Failed to parse localStorage, use defaults
+    console.warn('Failed to load column preferences:', error);
+  }
   return new Set(ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.id));
 }
 

@@ -3,6 +3,7 @@ import { Box, CircularProgress } from '@mui/material';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ErrorBoundary from './components/ErrorBoundary/ErrorBoundary';
+import ErrorToast from './components/ErrorToast/ErrorToast';
 import type { UserInfo } from '@shared/types';
 
 export default function App() {
@@ -45,6 +46,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
+      <ErrorToast />
       {user ? (
         <Dashboard user={user} onLogout={handleLogout} />
       ) : (

@@ -6,6 +6,7 @@ import {
 } from '@mui/material';
 import FolderSyncIcon from '@mui/icons-material/SyncAlt';
 import { useAppTheme } from '../theme/ThemeContext';
+import { errorService } from '../services/error-service';
 
 export default function Settings() {
   const { currentTheme, setThemeId, availableThemes } = useAppTheme();
@@ -257,9 +258,12 @@ export default function Settings() {
                 try {
                   const result = await window.api.app.downloadUpdate(updateStatus.url);
                   setDownloadedPath(result.path);
-                } catch {}
-                setDownloading(false);
-                unsub();
+                } catch (error) {
+                  errorService.handleError(error, 'Failed to download update');
+                } finally {
+                  setDownloading(false);
+                  unsub();
+                }
               }}
               sx={{ height: 22, fontSize: '0.75rem', cursor: 'pointer' }}
             />

@@ -21,7 +21,10 @@ export default class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught:', error, errorInfo);
+    // Log to console in development
+    if (import.meta.env.DEV) {
+      console.error('ErrorBoundary caught:', error, errorInfo);
+    }
   }
 
   render() {
@@ -42,12 +45,20 @@ export default class ErrorBoundary extends React.Component<Props, State> {
           <Typography variant="body2" color="text.secondary" textAlign="center" maxWidth={400}>
             {this.state.error?.message || 'An unexpected error occurred'}
           </Typography>
-          <Button
-            variant="outlined"
-            onClick={() => this.setState({ hasError: false, error: null })}
-          >
-            Try Again
-          </Button>
+          <Box display="flex" gap={2}>
+            <Button
+              variant="outlined"
+              onClick={() => this.setState({ hasError: false, error: null })}
+            >
+              Try Again
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => window.location.reload()}
+            >
+              Reload App
+            </Button>
+          </Box>
         </Box>
       );
     }

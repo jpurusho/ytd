@@ -20,6 +20,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import type { UserInfo, LocalPlaylist, VideoInfo, LocalPlaylistVideoItem } from '@shared/types';
 import { VIDEO_DRAG_TYPE } from '../VideoCard/VideoCard';
+import { errorService } from '../../services/error-service';
 
 export type Page = 'dashboard' | 'search' | 'browse' | 'playlists' | 'downloads' | 'history' | 'library' | 'sync' | 'settings';
 
@@ -121,7 +122,9 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
         return { ...pl, itemCount: items.length };
       }));
       setPlaylists(withCounts);
-    } catch {}
+    } catch (error) {
+      errorService.handleError(error, 'Failed to load playlists');
+    }
   }
 
   async function handleCreate() {
@@ -192,9 +195,12 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
                   try {
                     const result = await window.api.app.downloadUpdate(updateUrl);
                     setDownloadedPath(result.path);
-                  } catch {}
-                  setDownloading(false);
-                  unsub();
+                  } catch (error) {
+                    errorService.handleError(error, 'Failed to download update');
+                  } finally {
+                    setDownloading(false);
+                    unsub();
+                  }
                 }}
               >
                 v{updateAvailable} available — download

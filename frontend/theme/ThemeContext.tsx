@@ -33,7 +33,10 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, themeId);
-    } catch {}
+    } catch (error) {
+      // Failed to save theme preference, continue with in-memory state
+      console.warn('Failed to save theme preference:', error);
+    }
   }, [themeId]);
 
   const currentTheme = getTheme(themeId);

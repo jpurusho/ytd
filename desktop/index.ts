@@ -298,10 +298,20 @@ app.whenReady().then(async () => {
 
   if (process.platform === 'darwin' && app.dock) {
     const iconPath = path.join(__dirname, '../resources/icon.png');
-    try { app.dock.setIcon(iconPath); } catch {}
+    try {
+      app.dock.setIcon(iconPath);
+    } catch (error) {
+      // Failed to set dock icon, not critical
+      console.warn('Failed to set dock icon:', error);
+    }
   }
 
   initDatabase();
+
+  // Initialize logger after database is ready
+  const { logger } = require('./services/logger');
+  logger.init();
+
   registerIpcHandlers();
   createWindow();
 

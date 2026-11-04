@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { getYtDlpPath, getFfmpegPath, getQjsPath } from './tool-paths';
 import { getSetting } from './database';
+import { logger } from './logger';
 import type { QueueItem, FormatInfo } from '../../shared/types';
 
 export interface DownloadJob {
@@ -152,7 +153,9 @@ export class DownloadEngine {
             if (files.length > 0) {
               outputFilePath = path.join(outputDir, files[0].name);
             }
-          } catch {}
+          } catch (error) {
+            logger.warn('Failed to find downloaded file in output directory', { error, outputDir });
+          }
         }
 
         let fileSize = 0;
@@ -203,14 +206,17 @@ export class DownloadEngine {
       // Use system kill command — more reliable than Node's process.kill for SIGSTOP
       execSync(`kill -${signal} ${pids.join(' ')}`, { timeout: 3000 });
       return true;
-    } catch {
-      // Fallback: try each individually
+    } catch (error) {
+      // Fallback: try each individually (process group might not exist)
+      logger.debug('Process group signal failed, trying individual processes', { signal, pids });
       let success = false;
       for (const p of pids) {
         try {
           execSync(`kill -${signal} ${p}`, { timeout: 2000 });
           success = true;
-        } catch {}
+        } catch {
+          // Process may already be dead, ignore
+        }
       }
       return success;
     }
@@ -262,7 +268,11 @@ export class DownloadEngine {
     // Kill entire process tree with SIGTERM, then SIGKILL as fallback
     const killed = this.signalTree(pid, 'TERM');
     if (!killed) {
-      try { job.process.kill('SIGKILL'); } catch {}
+      try {
+        job.process.kill('SIGKILL');
+      } catch {
+        // Process already dead, ignore
+      }
     }
 
     // Give a moment then force-kill any stragglers
@@ -272,7 +282,9 @@ export class DownloadEngine {
         if (remaining.length > 0) {
           execSync(`kill -9 ${remaining.join(' ')}`, { timeout: 2000 });
         }
-      } catch {}
+      } catch {
+        // Processes already dead, ignore
+      }
     }, 500);
 
     this.activeJobs.delete(queueId);

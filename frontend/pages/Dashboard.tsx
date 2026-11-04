@@ -10,6 +10,7 @@ import History from './History';
 import Library from './Library';
 import Sync from './Sync';
 import Settings from './Settings';
+import { errorService } from '../services/error-service';
 import type { UserInfo, DownloadRequest } from '@shared/types';
 
 interface Props {
@@ -32,7 +33,9 @@ export default function Dashboard({ user, onLogout }: Props) {
     try {
       const queue = await window.api.downloads.getQueue();
       setQueueCount(queue.filter(i => i.status !== 'completed' && i.status !== 'cancelled').length);
-    } catch {}
+    } catch (error) {
+      errorService.handleError(error, 'Failed to load queue count');
+    }
   }
 
   async function handleLogout() {
@@ -52,6 +55,7 @@ export default function Dashboard({ user, onLogout }: Props) {
   }
 
   function renderPage() {
+    // Each page wrapped in error boundary for isolated failure handling
     switch (page) {
       case 'dashboard': return <DashboardPage />;
       case 'search': return <Search onDownload={handleDownload} />;
