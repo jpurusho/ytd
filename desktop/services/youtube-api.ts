@@ -49,31 +49,45 @@ export class YouTubeApiService {
   async getPlaylists(): Promise<PlaylistInfo[]> {
     const items: PlaylistInfo[] = [];
 
-    // First, add Watch Later (special playlist with ID "WL")
+    // Get special playlists from the user's channel (Liked Videos, Uploads, etc.)
+    // Note: Watch Later (WL) is NOT accessible through YouTube Data API v3
     try {
-      const wlResponse = await this.youtube.playlistItems.list({
-        part: ['snippet'],
-        playlistId: 'WL',
-        maxResults: 1,
+      const channelResponse = await this.youtube.channels.list({
+        part: ['contentDetails'],
+        mine: true,
       });
-      // If we can access it, add it to the list
-      if (wlResponse.data.items && wlResponse.data.items.length >= 0) {
-        // Get total count
-        const countResponse = await this.youtube.playlistItems.list({
-          part: ['id'],
-          playlistId: 'WL',
-          maxResults: 50,
-        });
-        items.push({
-          id: 'WL',
-          title: 'Watch Later',
-          itemCount: countResponse.data.pageInfo?.totalResults || 0,
-          thumbnail: '',
-          description: 'Your Watch Later videos',
-        });
+
+      const relatedPlaylists = channelResponse.data.items?.[0]?.contentDetails?.relatedPlaylists;
+      console.log('[getPlaylists] Related playlists:', relatedPlaylists);
+
+      // Add Liked Videos (LL) if available
+      if (relatedPlaylists?.likes) {
+        try {
+          const likesResponse = await this.youtube.playlistItems.list({
+            part: ['snippet'],
+            playlistId: relatedPlaylists.likes,
+            maxResults: 1,
+          });
+          const count = likesResponse.data.pageInfo?.totalResults || 0;
+          console.log(`[getPlaylists] Liked Videos has ${count} videos`);
+          if (count > 0) {
+            items.push({
+              id: relatedPlaylists.likes,
+              title: 'Liked Videos',
+              itemCount: count,
+              thumbnail: '',
+              description: 'Videos you have liked',
+            });
+          }
+        } catch (err: any) {
+          console.log('[getPlaylists] Failed to access Liked Videos:', err.message);
+        }
       }
-    } catch {
-      // Watch Later might not be accessible or empty, skip silently
+
+      // Note: Watch Later (WL) is not accessible through the public API
+      // YouTube's Data API v3 does not expose Watch Later, even with full youtube scope
+    } catch (err: any) {
+      console.error('[getPlaylists] Error fetching channel playlists:', err.message);
     }
 
     // Then fetch user-created playlists
@@ -103,6 +117,7 @@ export class YouTubeApiService {
   }
 
   async getPlaylistItems(playlistId: string, maxResults: number = 50): Promise<PlaylistItem[]> {
+    console.log(`[getPlaylistItems] Fetching playlist ${playlistId}, maxResults=${maxResults}`);
     const items: PlaylistItem[] = [];
     let pageToken: string | undefined;
     let fetched = 0;
@@ -115,14 +130,55 @@ export class YouTubeApiService {
         pageToken,
       });
 
+      console.log(`[getPlaylistItems] ${playlistId} page: ${response.data.items?.length || 0} items, totalResults: ${response.data.pageInfo?.totalResults || 0}`);
+
+      const videoIds = (response.data.items || [])
+        .map(item => item.snippet?.resourceId?.videoId)
+        .filter((id): id is string => !!id);
+
+      console.log(`[getPlaylistItems] ${playlistId} valid videoIds: ${videoIds.length} out of ${response.data.items?.length || 0} items`);
+
+      if (videoIds.length === 0) {
+        // Check if there are more pages even if this page had no valid videos
+        pageToken = response.data.nextPageToken || undefined;
+        if (!pageToken) break;
+        continue;
+      }
+
+      // Fetch full video details (duration, etc.) in batches
+      const detailsResponse = await this.youtube.videos.list({
+        part: ['snippet', 'contentDetails'],
+        id: videoIds,
+      });
+
+      const videoDetailsMap = new Map(
+        (detailsResponse.data.items || []).map(v => [
+          v.id || '',
+          {
+            duration: parseDuration(v.contentDetails?.duration || ''),
+          }
+        ])
+      );
+
       for (const item of response.data.items || []) {
+        const videoId = item.snippet?.resourceId?.videoId || '';
+        if (!videoId) {
+          console.log(`[getPlaylistItems] Skipping item with no videoId:`, item.snippet?.title);
+          continue;
+        }
+        const details = videoDetailsMap.get(videoId);
+        if (!details) {
+          console.log(`[getPlaylistItems] Skipping ${videoId}: no details available (may be private/deleted)`);
+          continue;
+        }
         items.push({
-          videoId: item.snippet?.resourceId?.videoId || '',
+          videoId,
           title: item.snippet?.title || '',
           thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || '',
           channel: item.snippet?.videoOwnerChannelTitle || '',
           position: item.snippet?.position || 0,
           publishedAt: item.snippet?.publishedAt || '',
+          duration: details.duration,
         });
         fetched++;
       }
@@ -130,6 +186,7 @@ export class YouTubeApiService {
       pageToken = response.data.nextPageToken || undefined;
     } while (pageToken && fetched < maxResults);
 
+    console.log(`[getPlaylistItems] ${playlistId} total fetched: ${items.length} items`);
     return items;
   }
 
@@ -271,6 +328,20 @@ export class YouTubeApiService {
 
   async removeVideoFromPlaylist(playlistItemId: string): Promise<void> {
     await this.youtube.playlistItems.delete({ id: playlistItemId });
+  }
+
+  async unlikeVideo(videoId: string): Promise<void> {
+    // To unlike a video, we need to delete it from the Liked Videos playlist (LL)
+    // First, find the playlistItemId for this video in the LL playlist
+    const items = await this.getPlaylistItemsWithIds('LL');
+    const item = items.find(i => i.videoId === videoId);
+
+    if (item) {
+      await this.youtube.playlistItems.delete({ id: item.playlistItemId });
+      console.log(`[unlikeVideo] Unliked video ${videoId} (playlistItemId: ${item.playlistItemId})`);
+    } else {
+      console.log(`[unlikeVideo] Video ${videoId} not found in Liked Videos`);
+    }
   }
 
   async getPlaylistItemsWithIds(playlistId: string): Promise<Array<{ playlistItemId: string; videoId: string }>> {

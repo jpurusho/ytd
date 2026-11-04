@@ -12,6 +12,7 @@ interface Props {
   onDownload: (video: VideoInfo) => void;
   onPreview?: (video: VideoInfo) => void;
   onAddToPlaylist?: (video: VideoInfo) => void;
+  onUnlike?: (video: VideoInfo) => void;
   disabled?: boolean;
   dragVideos?: VideoInfo[];
   draggable?: boolean;

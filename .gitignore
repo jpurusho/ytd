@@ -10,3 +10,11 @@ legacy/
 .DS_Store
 *.log
 tmp-test-downloads/
+.claude/settings.local.json
+.claude/log_token_usage.py
+.claude/token_usage.log
+scripts/token_cost.py
+# .claude/state/
+*.webm
+*.mp4
+*.mp3

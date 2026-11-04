@@ -105,12 +105,12 @@ export class GoogleAuthService {
   }
 
   async login(): Promise<UserInfo> {
-    const { port, code } = await this.getAuthCodeViaBrowser();
+    const { port, code, client } = await this.getAuthCodeViaBrowser();
 
     const redirectUri = `http://localhost:${port}/callback`;
-    const { tokens } = await this.oauth2Client.getToken({ code, redirect_uri: redirectUri });
+    const { tokens } = await client.getToken({ code, redirect_uri: redirectUri });
 
-    this.oauth2Client.setCredentials(tokens);
+    client.setCredentials(tokens);
 
     const authTokens: AuthTokens = {
       access_token: tokens.access_token || '',
@@ -120,6 +120,10 @@ export class GoogleAuthService {
       scope: tokens.scope ?? undefined,
     };
     saveTokens(authTokens);
+
+    // Replace the instance's OAuth2Client with the newly authenticated one
+    this.oauth2Client = client;
+    this.redirectUri = redirectUri;
 
     const oauth2 = google.oauth2({ version: 'v2', auth: this.oauth2Client });
     const { data } = await oauth2.userinfo.get();
@@ -174,10 +178,11 @@ export class GoogleAuthService {
     return tokens !== null;
   }
 
-  private getAuthCodeViaBrowser(): Promise<{ code: string; port: number }> {
+  private getAuthCodeViaBrowser(): Promise<{ code: string; port: number; client: OAuth2Client }> {
     return new Promise((resolve, reject) => {
       let resolved = false;
       let server: http.Server;
+      let callbackClient: OAuth2Client;
 
       const successHtml = `
         <!DOCTYPE html>
@@ -237,7 +242,7 @@ export class GoogleAuthService {
               res.writeHead(200, { 'Content-Type': 'text/html' });
               res.end(successHtml);
               setTimeout(() => server.close(), 1000);
-              resolve({ code, port });
+              resolve({ code, port, client: callbackClient });
             } else if (error) {
               resolved = true;
               res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -257,23 +262,22 @@ export class GoogleAuthService {
         server.listen(port, '127.0.0.1', () => {
           const redirectUri = `http://localhost:${port}/callback`;
           const creds = resolveCredentials();
-          this.oauth2Client = new OAuth2Client({
+          callbackClient = new OAuth2Client({
             clientId: creds.clientId,
             clientSecret: creds.clientSecret,
             redirectUri,
           });
-          this.redirectUri = redirectUri;
-          setupTokenListener(this.oauth2Client);
+          setupTokenListener(callbackClient);
 
           const tokens = getTokens();
           if (tokens) {
-            this.oauth2Client.setCredentials({
+            callbackClient.setCredentials({
               access_token: tokens.access_token,
               refresh_token: tokens.refresh_token,
             });
           }
 
-          const authUrl = this.oauth2Client.generateAuthUrl({
+          const authUrl = callbackClient.generateAuthUrl({
             access_type: 'offline',
             scope: SCOPES,
             prompt: 'consent',

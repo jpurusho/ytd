@@ -45,6 +45,7 @@ export interface PlaylistItem {
   channel: string;
   position: number;
   publishedAt: string;
+  duration: number;
 }
 
 export interface SubscriptionInfo {
@@ -214,6 +215,7 @@ export interface ElectronAPI {
     searchChannels: (query: string, maxResults?: number) => Promise<SubscriptionInfo[]>;
     getVideoInfo: (videoId: string) => Promise<VideoInfo>;
     getFormats: (url: string) => Promise<FormatInfo[]>;
+    unlikeVideo: (videoId: string) => Promise<void>;
   };
   downloads: {
     start: (request: DownloadRequest) => Promise<QueueItem>;

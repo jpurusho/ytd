@@ -19,6 +19,7 @@ const api: ElectronAPI = {
     searchChannels: (query: string, maxResults?: number) => ipcRenderer.invoke('youtube:searchChannels', query, maxResults),
     getVideoInfo: (videoId: string) => ipcRenderer.invoke('youtube:getVideoInfo', videoId),
     getFormats: (url: string) => ipcRenderer.invoke('youtube:getFormats', url),
+    unlikeVideo: (videoId: string) => ipcRenderer.invoke('youtube:unlikeVideo', videoId),
   },
   downloads: {
     start: (request) => ipcRenderer.invoke('downloads:start', request),

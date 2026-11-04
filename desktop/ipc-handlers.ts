@@ -91,6 +91,42 @@ export function registerIpcHandlers(): void {
     return getYouTubeService().getVideoInfo(videoId);
   });
 
+  ipcMain.handle('youtube:unlikeVideo', async (_event, videoId: string) => {
+    return getYouTubeService().unlikeVideo(videoId);
+  });
+
+  ipcMain.handle('youtube:testWatchLaterApi', async () => {
+    const oauth = authService.getOAuth2Client();
+    const token = (await oauth.getAccessToken()).token;
+
+    console.log('[testWatchLaterApi] Access token:', token ? 'EXISTS' : 'MISSING');
+
+    // Test direct API call
+    const https = require('https');
+
+    return new Promise((resolve, reject) => {
+      const url = 'https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=WL&maxResults=5';
+
+      https.get(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+        }
+      }, (res: any) => {
+        let data = '';
+        res.on('data', (chunk: string) => { data += chunk; });
+        res.on('end', () => {
+          console.log('[testWatchLaterApi] Response status:', res.statusCode);
+          console.log('[testWatchLaterApi] Response body:', data);
+          resolve({ statusCode: res.statusCode, body: JSON.parse(data) });
+        });
+      }).on('error', (err: any) => {
+        console.error('[testWatchLaterApi] Error:', err);
+        reject(err);
+      });
+    });
+  });
+
   ipcMain.handle('youtube:searchChannels', async (_event, query: string, maxResults?: number) => {
     return getYouTubeService().searchChannels(query, maxResults);
   });
@@ -569,6 +605,8 @@ export function registerIpcHandlers(): void {
     const ytService = getYouTubeService();
     const items = await ytService.getPlaylistItems(youtubePlaylistId, 200);
 
+    console.log(`[pullFromYouTube] Playlist ${youtubePlaylistId}: fetched ${items.length} items from YouTube`);
+
     let targetId = localPlaylistId;
     if (!targetId) {
       // Get playlist info to use as name
@@ -586,7 +624,7 @@ export function registerIpcHandlers(): void {
         title: item.title,
         channel: item.channel,
         thumbnailUrl: item.thumbnail,
-        duration: 0,
+        duration: item.duration,
       });
     }
 
