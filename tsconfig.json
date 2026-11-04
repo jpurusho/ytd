@@ -11,10 +11,10 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
-    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["shared/*"],
-      "@/*": ["frontend/*"]
+      "*": ["./*"],
+      "@shared/*": ["./shared/*"],
+      "@/*": ["./frontend/*"]
     }
   },
   "include": ["frontend/**/*", "shared/**/*"],

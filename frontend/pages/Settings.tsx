@@ -34,8 +34,8 @@ export default function Settings() {
     const dir = await window.api.app.getSetting('output_dir');
     if (dir) setOutputDir(dir);
     else {
-      const platform = await window.api.app.getPlatform();
-      setOutputDir(platform === 'darwin' ? `${process.env.HOME || '~'}/Downloads` : '~/Downloads');
+      // Default to ~/Downloads for all platforms (main process will resolve ~)
+      setOutputDir('~/Downloads');
     }
 
     const concurrent = await window.api.app.getSetting('max_concurrent');
