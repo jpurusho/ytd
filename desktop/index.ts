@@ -296,7 +296,7 @@ app.whenReady().then(async () => {
     });
   });
 
-  if (process.platform === 'darwin') {
+  if (process.platform === 'darwin' && app.dock) {
     const iconPath = path.join(__dirname, '../resources/icon.png');
     try { app.dock.setIcon(iconPath); } catch {}
   }
