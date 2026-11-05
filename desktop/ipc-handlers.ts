@@ -18,6 +18,22 @@ import {
 } from './services/database';
 import { SyncManager } from './services/sync/sync-manager';
 import type { DownloadRequest, LocalPlaylistVideoItem } from '../shared/types';
+import type { IncomingMessage } from 'http';
+
+// GitHub release types
+interface GitHubAsset {
+  name: string;
+  browser_download_url: string;
+  size: number;
+}
+
+interface GitHubRelease {
+  tag_name: string;
+  name: string;
+  body: string;
+  html_url: string;
+  assets: GitHubAsset[];
+}
 
 let authService: GoogleAuthService;
 let youtubeService: YouTubeApiService | null = null;
@@ -112,7 +128,7 @@ export function registerIpcHandlers(): void {
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json',
         }
-      }, (res: any) => {
+      }, (res: IncomingMessage) => {
         let data = '';
         res.on('data', (chunk: string) => { data += chunk; });
         res.on('end', () => {
@@ -120,7 +136,7 @@ export function registerIpcHandlers(): void {
           console.log('[testWatchLaterApi] Response body:', data);
           resolve({ statusCode: res.statusCode, body: JSON.parse(data) });
         });
-      }).on('error', (err: any) => {
+      }).on('error', (err: Error) => {
         console.error('[testWatchLaterApi] Error:', err);
         reject(err);
       });
@@ -244,7 +260,7 @@ export function registerIpcHandlers(): void {
 
   // ─── Library ─────────────────────────────────────────────────────────────────
 
-  ipcMain.handle('library:getAll', (_event, opts?: any) => {
+  ipcMain.handle('library:getAll', (_event, opts?: { search?: string; sortBy?: string; order?: 'asc' | 'desc' }) => {
     return getLibraryItems(opts);
   });
 
@@ -272,8 +288,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sync:start', () => syncManager.start());
   ipcMain.handle('sync:stop', () => syncManager.stop());
   ipcMain.handle('sync:getPeers', () => syncManager.getPeers());
-  ipcMain.handle('sync:getSyncPreview', (_event, peer: any) => syncManager.getSyncPreview(peer));
-  ipcMain.handle('sync:startSync', (_event, peer: any) => syncManager.startSync(peer));
+  ipcMain.handle('sync:getSyncPreview', (_event, peer: { id: string; address: string; port: number }) => syncManager.getSyncPreview(peer));
+  ipcMain.handle('sync:startSync', (_event, peer: { id: string; address: string; port: number }) => syncManager.startSync(peer));
   ipcMain.handle('sync:pauseSync', (_event, sessionId: number) => syncManager.pauseSync(sessionId));
   ipcMain.handle('sync:resumeSync', (_event, sessionId: number) => syncManager.resumeSync(sessionId));
   ipcMain.handle('sync:cancelSync', (_event, sessionId: number) => syncManager.cancelSync(sessionId));
@@ -324,7 +340,7 @@ export function registerIpcHandlers(): void {
   // Persist update cache to disk so it survives app restarts
   const updateCachePath = path.join(app.getPath('userData'), 'update-cache.json');
   let lastETag: string | null = null;
-  let cachedRelease: any = null;
+  let cachedRelease: GitHubRelease | null = null;
   try {
     const cached = JSON.parse(fs.readFileSync(updateCachePath, 'utf8'));
     lastETag = cached.etag || null;
@@ -343,7 +359,7 @@ export function registerIpcHandlers(): void {
     try {
       const https = require('https');
 
-      const release: any = await new Promise((resolve, reject) => {
+      const release: GitHubRelease = await new Promise((resolve, reject) => {
         const headers: Record<string, string> = { 'User-Agent': 'ytd-updater' };
         if (lastETag) headers['If-None-Match'] = lastETag;
 
@@ -351,7 +367,7 @@ export function registerIpcHandlers(): void {
           hostname: 'api.github.com',
           path: '/repos/jpurusho/ytd/releases/latest',
           headers,
-        }, (res: any) => {
+        }, (res: IncomingMessage) => {
           let data = '';
           res.on('data', (chunk: string) => { data += chunk; });
           res.on('end', () => {
@@ -371,14 +387,14 @@ export function registerIpcHandlers(): void {
               reject(new Error(`Update check failed (HTTP ${res.statusCode}).`));
             }
           });
-        }).on('error', (err: any) => {
+        }).on('error', (err: Error) => {
           if (cachedRelease) resolve(cachedRelease);
           else reject(new Error(`Cannot reach GitHub: ${err.message}`));
         });
       });
 
       const latestVersion = release.tag_name?.replace(/^v/, '') || '';
-      const zipAsset = (release.assets || []).find((a: any) => a.name?.endsWith('.zip'));
+      const zipAsset = (release.assets || []).find((a: GitHubAsset) => a.name?.endsWith('.zip'));
       const downloadUrl = zipAsset?.browser_download_url || release.html_url || '';
 
       if (!latestVersion) return { status: 'error', message: 'Could not determine latest version' };
@@ -388,7 +404,7 @@ export function registerIpcHandlers(): void {
         return { status: 'available', version: latestVersion, url: downloadUrl };
       }
       return { status: 'up-to-date', version: currentVersion };
-    } catch (err: any) {
+    } catch (err: unknown) {
       return { status: 'error', message: err.message };
     }
   });
@@ -402,7 +418,7 @@ export function registerIpcHandlers(): void {
 
     return new Promise((resolve, reject) => {
       const follow = (url: string) => {
-        https.get(url, { headers: { 'User-Agent': 'ytd-updater' } }, (res: any) => {
+        https.get(url, { headers: { 'User-Agent': 'ytd-updater' } }, (res: IncomingMessage) => {
           if (res.statusCode === 301 || res.statusCode === 302) {
             return follow(res.headers.location);
           }
@@ -432,7 +448,7 @@ export function registerIpcHandlers(): void {
             file.close();
             resolve({ success: true, path: destPath, size: downloaded });
           });
-          file.on('error', (err: any) => {
+          file.on('error', (err: Error) => {
             fs.unlinkSync(destPath);
             reject(err);
           });

@@ -5,6 +5,20 @@ import * as os from 'os';
 import * as fs from 'fs';
 import type { AuthTokens, UserInfo, QueueItem, DownloadRecord, DownloadRequest, LibraryItem } from '../../shared/types';
 
+// Database row types (what SQLite returns)
+interface DatabaseRow {
+  [key: string]: string | number | null;
+}
+
+interface ColumnInfo {
+  cid: number;
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+  pk: number;
+}
+
 let db: Database.Database;
 
 const CONFIG_DIR = path.join(os.homedir(), '.ytd');
@@ -178,7 +192,7 @@ export function initDatabase(): void {
 
   // Migration: add published_at if missing
   const playlistItemCols = db.pragma('table_info(local_playlist_items)') as any[];
-  const playlistItemColNames = new Set(playlistItemCols.map((c: any) => c.name));
+  const playlistItemColNames = new Set(playlistItemCols.map((c: ColumnInfo) => c.name));
   if (!playlistItemColNames.has('published_at')) {
     db.exec('ALTER TABLE local_playlist_items ADD COLUMN published_at TEXT');
   }
@@ -332,7 +346,7 @@ export function getQueue(): QueueItem[] {
 
 export function updateQueueItem(id: number, updates: Partial<Record<string, any>>): void {
   const fields: string[] = [];
-  const values: any[] = [];
+  const values: (string | number | null)[] = [];
 
   for (const [key, value] of Object.entries(updates)) {
     fields.push(`${key} = ?`);
@@ -453,7 +467,7 @@ export function getLocalPlaylists(): LocalPlaylistRow[] {
 
 export function updateLocalPlaylist(id: number, updates: { name?: string; description?: string; youtubePlaylistId?: string | null; lastSyncedAt?: string | null }): LocalPlaylistRow | null {
   const fields: string[] = [];
-  const values: any[] = [];
+  const values: (string | number | null)[] = [];
 
   if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
   if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
@@ -512,7 +526,7 @@ export function reorderPlaylistItem(playlistId: number, videoId: string, newPosi
   db.prepare("UPDATE local_playlists SET updated_at = datetime('now') WHERE id = ?").run(playlistId);
 }
 
-function rowToLocalPlaylist(row: any): LocalPlaylistRow {
+function rowToLocalPlaylist(row: DatabaseRow): LocalPlaylistRow {
   return {
     id: row.id,
     name: row.name,
@@ -524,7 +538,7 @@ function rowToLocalPlaylist(row: any): LocalPlaylistRow {
   };
 }
 
-function rowToPlaylistItem(row: any): LocalPlaylistItemRow {
+function rowToPlaylistItem(row: DatabaseRow): LocalPlaylistItemRow {
   return {
     id: row.id,
     playlistId: row.playlist_id,
@@ -541,7 +555,7 @@ function rowToPlaylistItem(row: any): LocalPlaylistItemRow {
 
 // ─── Row mappers ────────────────────────────────────────────────────────────
 
-function rowToQueueItem(row: any): QueueItem {
+function rowToQueueItem(row: DatabaseRow): QueueItem {
   return {
     id: row.id,
     videoId: row.video_id,
@@ -570,7 +584,7 @@ function rowToQueueItem(row: any): QueueItem {
   };
 }
 
-function rowToDownloadRecord(row: any): DownloadRecord {
+function rowToDownloadRecord(row: DatabaseRow): DownloadRecord {
   return {
     id: row.id,
     videoId: row.video_id,
@@ -670,7 +684,7 @@ export function getLibraryItems(opts?: { limit?: number; offset?: number; search
   const sortOrder = order === 'asc' ? 'ASC' : 'DESC';
 
   let query = `SELECT * FROM library`;
-  const params: any[] = [];
+  const params: (string | number)[] = [];
 
   if (opts?.search) {
     query += ` WHERE title LIKE ? OR channel LIKE ?`;
@@ -735,23 +749,23 @@ export function getPlaylistItemsWithLibrary(playlistId: number): LocalPlaylistIt
   return rows.map(rowToPlaylistItem);
 }
 
-function rowToLibraryItem(row: any): LibraryItem {
+function rowToLibraryItem(row: DatabaseRow): LibraryItem {
   return {
-    videoId: row.video_id,
-    title: row.title,
-    channel: row.channel || '',
-    channelId: row.channel_id ?? undefined,
-    thumbnailUrl: row.thumbnail_url ?? undefined,
-    url: row.url,
-    format: row.format ?? undefined,
-    quality: row.quality ?? undefined,
-    resolution: row.resolution ?? undefined,
-    filePath: resolveFilePath(row.file_path),
-    fileSize: row.file_size || 0,
-    duration: row.duration || 0,
-    publishedAt: row.published_at ?? undefined,
-    downloadedAt: row.downloaded_at ?? undefined,
-    addedAt: row.added_at,
-    updatedAt: row.updated_at,
+    videoId: String(row.video_id),
+    title: String(row.title),
+    channel: row.channel ? String(row.channel) : '',
+    channelId: row.channel_id ? String(row.channel_id) : undefined,
+    thumbnailUrl: row.thumbnail_url ? String(row.thumbnail_url) : undefined,
+    url: String(row.url),
+    format: row.format ? String(row.format) : undefined,
+    quality: row.quality ? String(row.quality) : undefined,
+    resolution: row.resolution ? String(row.resolution) : undefined,
+    filePath: row.file_path ? resolveFilePath(String(row.file_path)) : null,
+    fileSize: Number(row.file_size) || 0,
+    duration: Number(row.duration) || 0,
+    publishedAt: row.published_at ? String(row.published_at) : undefined,
+    downloadedAt: row.downloaded_at ? String(row.downloaded_at) : undefined,
+    addedAt: String(row.added_at),
+    updatedAt: String(row.updated_at),
   };
 }
