@@ -1,40 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { Box, CircularProgress } from '@mui/material';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ErrorBoundary from './components/ErrorBoundary/ErrorBoundary';
 import ErrorToast from './components/ErrorToast/ErrorToast';
-import type { UserInfo } from '@shared/types';
+import { QueryProvider } from './providers/QueryProvider';
+import { useAuthStore } from './stores/authStore';
 
-export default function App() {
-  const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<UserInfo | null>(null);
+function AppContent() {
+  const { user, loading, checkAuth } = useAuthStore();
 
   useEffect(() => {
     checkAuth();
-  }, []);
-
-  async function checkAuth() {
-    try {
-      const loggedIn = await window.api.auth.isLoggedIn();
-      if (loggedIn) {
-        const userInfo = await window.api.auth.getUser();
-        setUser(userInfo);
-      }
-    } catch (err) {
-      console.error('Auth check failed:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleLogin(userInfo: UserInfo) {
-    setUser(userInfo);
-  }
-
-  function handleLogout() {
-    setUser(null);
-  }
+  }, [checkAuth]);
 
   if (loading) {
     return (
@@ -45,13 +23,19 @@ export default function App() {
   }
 
   return (
-    <ErrorBoundary>
+    <>
       <ErrorToast />
-      {user ? (
-        <Dashboard user={user} onLogout={handleLogout} />
-      ) : (
-        <Login onLogin={handleLogin} />
-      )}
+      {user ? <Dashboard /> : <Login />}
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <QueryProvider>
+        <AppContent />
+      </QueryProvider>
     </ErrorBoundary>
   );
 }

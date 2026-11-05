@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { Box } from '@mui/material';
 import Sidebar, { type Page } from '../components/Layout/Sidebar';
 import DashboardPage from './DashboardPage';
@@ -10,42 +10,24 @@ import History from './History';
 import Library from './Library';
 import Sync from './Sync';
 import Settings from './Settings';
-import { errorService } from '../services/error-service';
-import type { UserInfo, DownloadRequest } from '@shared/types';
+import { useAuthStore } from '../stores/authStore';
+import { useQueueQuery, useStartDownload } from '../hooks/useQueue';
+import type { DownloadRequest } from '@shared/types';
 
-interface Props {
-  user: UserInfo;
-  onLogout: () => void;
-}
+export default function Dashboard() {
+  const { user, logout } = useAuthStore();
+  const { data: queue = [] } = useQueueQuery();
+  const startDownload = useStartDownload();
 
-export default function Dashboard({ user, onLogout }: Props) {
   const [page, setPage] = useState<Page>('dashboard');
-  const [queueCount, setQueueCount] = useState(0);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null);
 
-  useEffect(() => {
-    loadQueueCount();
-    const interval = setInterval(loadQueueCount, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  async function loadQueueCount() {
-    try {
-      const queue = await window.api.downloads.getQueue();
-      setQueueCount(queue.filter(i => i.status !== 'completed' && i.status !== 'cancelled').length);
-    } catch (error) {
-      errorService.handleError(error, 'Failed to load queue count');
-    }
-  }
-
-  async function handleLogout() {
-    await window.api.auth.logout();
-    onLogout();
-  }
+  const queueCount = queue.filter(
+    (i) => i.status !== 'completed' && i.status !== 'cancelled'
+  ).length;
 
   async function handleDownload(request: DownloadRequest) {
-    await window.api.downloads.start(request);
-    loadQueueCount();
+    await startDownload.mutateAsync(request);
     setPage('downloads');
   }
 
@@ -74,8 +56,8 @@ export default function Dashboard({ user, onLogout }: Props) {
       <Sidebar
         currentPage={page}
         onPageChange={(p) => { setPage(p); setSelectedPlaylistId(null); }}
-        user={user}
-        onLogout={handleLogout}
+        user={user!}
+        onLogout={logout}
         queueCount={queueCount}
         onSelectPlaylist={handleSelectPlaylist}
       />

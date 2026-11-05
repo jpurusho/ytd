@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Button, TextField, Typography, Paper, CircularProgress, Alert } from '@mui/material';
+import { useAuthStore } from '../stores/authStore';
 import type { UserInfo } from '@shared/types';
 
-interface Props {
-  onLogin: (user: UserInfo) => void;
-}
-
-export default function Login({ onLogin }: Props) {
+export default function Login() {
+  const { login: setUser } = useAuthStore();
   const [hasCredentials, setHasCredentials] = useState<boolean | null>(null);
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
