@@ -197,6 +197,45 @@ export interface DownloadRequest {
   endTime?: string;
 }
 
+export interface Transcript {
+  id: number;
+  videoId: string;
+  format: string;
+  language: string | null;
+  transcriptText: string;
+  transcriptJson: string;
+  wordCount: number;
+  durationSeconds: number;
+  method: 'whisper-local' | 'whisper-api' | 'youtube' | null;
+  model: string | null;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  error: string | null;
+  progress: number;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface TranscriptOptions {
+  method?: 'whisper-local' | 'whisper-api' | 'auto';
+  model?: 'tiny' | 'base' | 'small' | 'medium' | 'large';
+  language?: string;
+}
+
+export interface TranscriptSearchResult {
+  videoId: string;
+  title: string;
+  channel: string;
+  thumbnailUrl: string;
+  snippet: string;
+  timestamp?: number;
+}
+
 export interface ElectronAPI {
   auth: {
     hasCredentials: () => Promise<boolean>;

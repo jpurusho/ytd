@@ -3,7 +3,7 @@ import { app } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import type { AuthTokens, UserInfo, QueueItem, DownloadRecord, DownloadRequest, LibraryItem } from '../../shared/types';
+import type { AuthTokens, UserInfo, QueueItem, DownloadRecord, DownloadRequest, LibraryItem, Transcript, TranscriptOptions, TranscriptSearchResult } from '../../shared/types';
 
 // Database row types (what SQLite returns)
 interface DatabaseRow {
@@ -187,6 +187,35 @@ export function initDatabase(): void {
       downloaded_at TEXT,
       added_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS transcripts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      video_id TEXT NOT NULL,
+      format TEXT NOT NULL DEFAULT 'json',
+      language TEXT,
+      transcript_text TEXT,
+      transcript_json TEXT,
+      word_count INTEGER,
+      duration_seconds INTEGER,
+      method TEXT,
+      model TEXT,
+      status TEXT DEFAULT 'pending',
+      error TEXT,
+      progress REAL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      completed_at TEXT,
+      FOREIGN KEY (video_id) REFERENCES library(video_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_transcripts_video_id ON transcripts(video_id);
+    CREATE INDEX IF NOT EXISTS idx_transcripts_status ON transcripts(status);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS transcripts_fts USING fts5(
+      video_id UNINDEXED,
+      transcript_text,
+      content=transcripts,
+      content_rowid=id
     );
   `);
 
@@ -767,5 +796,165 @@ function rowToLibraryItem(row: DatabaseRow): LibraryItem {
     downloadedAt: row.downloaded_at ? String(row.downloaded_at) : undefined,
     addedAt: String(row.added_at),
     updatedAt: String(row.updated_at),
+  };
+}
+
+// ─── Transcript helpers ───────────────────────────────────────────────────
+
+export function createTranscript(videoId: string, options?: TranscriptOptions): number {
+  const result = db.prepare(`
+    INSERT INTO transcripts (video_id, method, model, status, progress)
+    VALUES (?, ?, ?, 'pending', 0)
+  `).run(
+    videoId,
+    options?.method || 'whisper-local',
+    options?.model || 'base'
+  );
+  return result.lastInsertRowid as number;
+}
+
+export function getTranscript(videoId: string): Transcript | null {
+  const row = db.prepare('SELECT * FROM transcripts WHERE video_id = ? ORDER BY id DESC LIMIT 1').get(videoId) as DatabaseRow | undefined;
+  if (!row) return null;
+  return rowToTranscript(row);
+}
+
+export function getTranscriptById(id: number): Transcript | null {
+  const row = db.prepare('SELECT * FROM transcripts WHERE id = ?').get(id) as DatabaseRow | undefined;
+  if (!row) return null;
+  return rowToTranscript(row);
+}
+
+export function updateTranscript(id: number, updates: {
+  status?: 'pending' | 'processing' | 'completed' | 'failed';
+  progress?: number;
+  transcriptText?: string;
+  transcriptJson?: string;
+  language?: string;
+  wordCount?: number;
+  durationSeconds?: number;
+  error?: string;
+  completedAt?: string;
+}): void {
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (updates.status !== undefined) {
+    fields.push('status = ?');
+    values.push(updates.status);
+  }
+  if (updates.progress !== undefined) {
+    fields.push('progress = ?');
+    values.push(updates.progress);
+  }
+  if (updates.transcriptText !== undefined) {
+    fields.push('transcript_text = ?');
+    values.push(updates.transcriptText);
+  }
+  if (updates.transcriptJson !== undefined) {
+    fields.push('transcript_json = ?');
+    values.push(updates.transcriptJson);
+  }
+  if (updates.language !== undefined) {
+    fields.push('language = ?');
+    values.push(updates.language);
+  }
+  if (updates.wordCount !== undefined) {
+    fields.push('word_count = ?');
+    values.push(updates.wordCount);
+  }
+  if (updates.durationSeconds !== undefined) {
+    fields.push('duration_seconds = ?');
+    values.push(updates.durationSeconds);
+  }
+  if (updates.error !== undefined) {
+    fields.push('error = ?');
+    values.push(updates.error);
+  }
+  if (updates.completedAt !== undefined) {
+    fields.push('completed_at = ?');
+    values.push(updates.completedAt);
+  }
+
+  if (fields.length > 0) {
+    values.push(id);
+    db.prepare(`UPDATE transcripts SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+
+    // Update FTS index if transcript_text changed
+    if (updates.transcriptText !== undefined && updates.status === 'completed') {
+      db.prepare(`
+        INSERT INTO transcripts_fts(rowid, video_id, transcript_text)
+        VALUES (?, ?, ?)
+        ON CONFLICT(rowid) DO UPDATE SET transcript_text = excluded.transcript_text
+      `).run(id, getTranscriptById(id)?.videoId, updates.transcriptText);
+    }
+  }
+}
+
+export function deleteTranscript(videoId: string): void {
+  const transcript = getTranscript(videoId);
+  if (transcript) {
+    db.prepare('DELETE FROM transcripts_fts WHERE rowid = ?').run(transcript.id);
+    db.prepare('DELETE FROM transcripts WHERE video_id = ?').run(videoId);
+  }
+}
+
+export function searchTranscripts(query: string, limit: number = 20): TranscriptSearchResult[] {
+  const rows = db.prepare(`
+    SELECT
+      t.video_id,
+      l.title,
+      l.channel,
+      l.thumbnail_url,
+      snippet(transcripts_fts, 1, '<mark>', '</mark>', '...', 64) as snippet
+    FROM transcripts_fts
+    JOIN transcripts t ON transcripts_fts.rowid = t.id
+    JOIN library l ON t.video_id = l.video_id
+    WHERE transcripts_fts MATCH ?
+    ORDER BY rank
+    LIMIT ?
+  `).all(query, limit) as DatabaseRow[];
+
+  return rows.map(row => ({
+    videoId: String(row.video_id),
+    title: String(row.title),
+    channel: String(row.channel),
+    thumbnailUrl: String(row.thumbnail_url),
+    snippet: String(row.snippet),
+  }));
+}
+
+export function getAllTranscripts(status?: string): Transcript[] {
+  let sql = 'SELECT * FROM transcripts';
+  const params: any[] = [];
+
+  if (status) {
+    sql += ' WHERE status = ?';
+    params.push(status);
+  }
+
+  sql += ' ORDER BY created_at DESC';
+
+  const rows = db.prepare(sql).all(...params) as DatabaseRow[];
+  return rows.map(rowToTranscript);
+}
+
+function rowToTranscript(row: DatabaseRow): Transcript {
+  return {
+    id: Number(row.id),
+    videoId: String(row.video_id),
+    format: String(row.format),
+    language: row.language ? String(row.language) : null,
+    transcriptText: String(row.transcript_text || ''),
+    transcriptJson: String(row.transcript_json || ''),
+    wordCount: Number(row.word_count || 0),
+    durationSeconds: Number(row.duration_seconds || 0),
+    method: row.method as 'whisper-local' | 'whisper-api' | 'youtube' | null,
+    model: row.model ? String(row.model) : null,
+    status: String(row.status) as 'pending' | 'processing' | 'completed' | 'failed',
+    error: row.error ? String(row.error) : null,
+    progress: Number(row.progress || 0),
+    createdAt: String(row.created_at),
+    completedAt: row.completed_at ? String(row.completed_at) : null,
   };
 }
