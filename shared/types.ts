@@ -232,6 +232,7 @@ export interface ElectronAPI {
     onProgress: (callback: (progress: DownloadProgress) => void) => () => void;
     onComplete: (callback: (record: DownloadRecord) => void) => () => void;
     onError: (callback: (data: { queueId: number; error: string }) => void) => () => void;
+    onQueueUpdate: (callback: (queue: QueueItem[]) => void) => () => void;
   };
   library: {
     getAll: (opts?: { limit?: number; offset?: number; search?: string; sort?: string; order?: 'asc' | 'desc' }) => Promise<LibraryItem[]>;

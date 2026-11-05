@@ -30,7 +30,7 @@ export default function Login() {
     setError('');
     try {
       const user = await window.api.auth.login();
-      onLogin(user);
+      setUser(user);
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');
     } finally {

@@ -48,6 +48,11 @@ const api: ElectronAPI = {
       ipcRenderer.on('download:error', handler);
       return () => ipcRenderer.removeListener('download:error', handler);
     },
+    onQueueUpdate: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on('queue:updated', handler);
+      return () => ipcRenderer.removeListener('queue:updated', handler);
+    },
   },
   library: {
     getAll: (opts?: any) => ipcRenderer.invoke('library:getAll', opts),

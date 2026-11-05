@@ -2,14 +2,26 @@
  * React Query hooks for download queue
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import type { QueueItem, DownloadRequest } from '@shared/types';
 import { errorService } from '../services/error-service';
 
 export function useQueueQuery() {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    // Listen for queue updates from main process (event-driven!)
+    const unsubscribe = window.api.downloads.onQueueUpdate((queue) => {
+      queryClient.setQueryData(['queue'], queue);
+    });
+
+    return unsubscribe;
+  }, [queryClient]);
+
   return useQuery({
     queryKey: ['queue'],
     queryFn: () => window.api.downloads.getQueue(),
-    refetchInterval: 3000, // Poll every 3s (will replace with events later)
+    // No more polling! Updates come via events
   });
 }
 
