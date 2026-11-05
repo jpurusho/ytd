@@ -24,7 +24,7 @@ function getStatusColor(status: string): 'default' | 'primary' | 'success' | 'er
   }
 }
 
-export default function DownloadProgress({ item, onPause, onResume, onCancel, onRetry }: Props) {
+const DownloadProgress = React.memo(function DownloadProgress({ item, onPause, onResume, onCancel, onRetry }: Props) {
   return (
     <Box
       sx={{
@@ -126,4 +126,6 @@ export default function DownloadProgress({ item, onPause, onResume, onCancel, on
       </Box>
     </Box>
   );
-}
+});
+
+export default DownloadProgress;

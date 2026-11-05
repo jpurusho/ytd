@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.106.1",
+    "@types/react-window": "^1.8.8",
     "better-sqlite3": "^13.0.3",
     "bonjour-service": "^1.4.0",
     "dotenv": "^16.4.0",
@@ -30,6 +31,7 @@
     "google-auth-library": "^11.3.3",
     "googleapis": "^189.0.0",
     "node-cron": "^4.2.1",
+    "react-window": "^2.5.3",
     "winston": "^3.19.0",
     "zustand": "^5.0.16"
   },

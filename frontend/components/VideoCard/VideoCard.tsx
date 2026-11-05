@@ -32,7 +32,7 @@ function formatViews(count: number): string {
   return `${count} views`;
 }
 
-export default function VideoCard({ video, onDownload, onPreview, onAddToPlaylist, disabled, draggable = true, dragVideos }: Props) {
+const VideoCard = React.memo(function VideoCard({ video, onDownload, onPreview, onAddToPlaylist, disabled, draggable = true, dragVideos }: Props) {
   const isPrivate = disabled || video.title === 'Private video' || video.title === 'Deleted video';
 
   function handleDragStart(e: React.DragEvent) {
@@ -165,4 +165,6 @@ export default function VideoCard({ video, onDownload, onPreview, onAddToPlaylis
       </CardContent>
     </Card>
   );
-}
+});
+
+export default VideoCard;
