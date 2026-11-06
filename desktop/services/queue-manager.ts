@@ -1,5 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { DownloadEngine } from './download-engine';
+import { fileIntegrityService } from './file-integrity';
+import { logger } from './logger';
 import {
   addToQueue, getQueue, getQueueItem, updateQueueItem, deleteQueueItem,
   getPendingQueueItems, getActiveQueueItems, addDownloadRecord, getSetting,
@@ -127,10 +129,36 @@ export class QueueManager {
     this.sendToRenderer('download:progress', progressEvent);
   }
 
-  private handleComplete(queueId: number, filePath: string, fileSize: number): void {
+  private async handleComplete(queueId: number, filePath: string, fileSize: number): Promise<void> {
     const item = getQueueItem(queueId);
     if (!item) return;
 
+    // Verify file integrity before marking as complete
+    logger.info(`[QueueManager] Verifying file integrity for ${item.videoId}`);
+    const integrityResult = await fileIntegrityService.verifyFile(filePath, fileSize * 0.9); // Allow 10% variance
+
+    if (!integrityResult.valid) {
+      logger.error(`[QueueManager] File integrity check failed for ${item.videoId}`, {
+        error: integrityResult.error,
+        fileSize: integrityResult.fileSize,
+      });
+
+      // Mark as failed instead of completed
+      updateQueueItem(queueId, {
+        status: 'failed',
+        error: `File integrity check failed: ${integrityResult.error}`,
+      });
+
+      this.sendToRenderer('download:error', {
+        queueId,
+        error: `File corrupted: ${integrityResult.error}`,
+      });
+      this.sendQueueUpdate();
+      this.processNext();
+      return;
+    }
+
+    // File is valid, proceed with completion
     updateQueueItem(queueId, {
       status: 'completed',
       progress: 100,
@@ -138,7 +166,7 @@ export class QueueManager {
       temp_file_path: filePath,
     });
 
-    const record = addDownloadRecord(item, filePath, fileSize);
+    const record = addDownloadRecord(item, filePath, integrityResult.fileSize);
 
     upsertLibraryItem({
       videoId: item.videoId,
@@ -150,9 +178,12 @@ export class QueueManager {
       quality: item.quality,
       resolution: item.resolution,
       filePath: toRelativePath(filePath),
-      fileSize,
+      fileSize: integrityResult.fileSize,
       downloadedAt: new Date().toISOString(),
     });
+
+    // Store hash for future verification
+    fileIntegrityService.storeHash(item.videoId, integrityResult.hash);
 
     this.sendToRenderer('download:complete', record);
     this.sendQueueUpdate();
