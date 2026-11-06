@@ -1,7 +1,10 @@
 import { BrowserWindow } from 'electron';
+import * as path from 'path';
+import * as os from 'os';
 import { DownloadEngine } from './download-engine';
 import { fileIntegrityService } from './file-integrity';
 import { retryManager, DEFAULT_RETRY_CONFIG } from './retry-manager';
+import { diskSpaceService } from './disk-space';
 import { logger } from './logger';
 import {
   addToQueue, getQueue, getQueueItem, updateQueueItem, deleteQueueItem,
@@ -89,7 +92,7 @@ export class QueueManager {
     this.processNext();
   }
 
-  private processNext(): void {
+  private async processNext(): Promise<void> {
     const activeCount = this.engine.getActiveCount();
     if (activeCount >= this.maxConcurrent) return;
 
@@ -104,9 +107,40 @@ export class QueueManager {
     for (let i = 0; i < Math.min(slotsAvailable, readyItems.length); i++) {
       const item = readyItems[i];
 
+      // Check disk space before starting download
+      const outputDir = getSetting('output_dir') || path.join(os.homedir(), 'Downloads');
+      const estimatedSize = diskSpaceService.estimateDownloadSize(
+        item.format || 'mp4',
+        item.quality || 'best',
+        300 // Assume 5 minutes if duration unknown
+      );
+
+      const spaceCheck = await diskSpaceService.hasEnoughSpace(outputDir, estimatedSize);
+
+      if (!spaceCheck.hasSpace) {
+        logger.error(`[QueueManager] Insufficient disk space for ${item.videoId}`, {
+          available: diskSpaceService.formatBytes(spaceCheck.available),
+          required: diskSpaceService.formatBytes(spaceCheck.required),
+        });
+
+        updateQueueItem(item.id, {
+          status: 'failed',
+          error: spaceCheck.message || 'Insufficient disk space',
+        });
+
+        this.sendToRenderer('download:error', {
+          queueId: item.id,
+          error: spaceCheck.message || 'Insufficient disk space',
+        });
+
+        continue; // Skip this item, try next
+      }
+
       logger.info(`[QueueManager] Starting download for ${item.videoId}`, {
         retryCount: item.retryCount || 0,
         maxRetries: item.maxRetries || DEFAULT_RETRY_CONFIG.maxRetries,
+        estimatedSize: diskSpaceService.formatBytes(estimatedSize),
+        availableSpace: diskSpaceService.formatBytes(spaceCheck.available),
       });
 
       updateQueueItem(item.id, {
