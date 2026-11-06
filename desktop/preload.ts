@@ -61,6 +61,37 @@ const api: ElectronAPI = {
     getRecent: (limit: number) => ipcRenderer.invoke('library:getRecent', limit),
     getStats: () => ipcRenderer.invoke('library:getStats'),
   },
+  transcripts: {
+    start: (videoId: string, options?: import('../shared/types').TranscriptOptions) => ipcRenderer.invoke('transcripts:start', videoId, options),
+    cancel: (videoId: string) => ipcRenderer.invoke('transcripts:cancel', videoId),
+    get: (videoId: string) => ipcRenderer.invoke('transcripts:get', videoId),
+    getAll: (status?: string) => ipcRenderer.invoke('transcripts:getAll', status),
+    search: (query: string, limit?: number) => ipcRenderer.invoke('transcripts:search', query, limit),
+    delete: (videoId: string) => ipcRenderer.invoke('transcripts:delete', videoId),
+    getQueue: () => ipcRenderer.invoke('transcripts:getQueue'),
+    checkAvailability: () => ipcRenderer.invoke('transcripts:checkAvailability'),
+    export: (videoId: string, format: 'txt' | 'srt' | 'vtt') => ipcRenderer.invoke('transcripts:export', videoId, format),
+    onProgress: (callback: any) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on('transcript:progress', handler);
+      return () => ipcRenderer.removeListener('transcript:progress', handler);
+    },
+    onComplete: (callback: any) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on('transcript:complete', handler);
+      return () => ipcRenderer.removeListener('transcript:complete', handler);
+    },
+    onError: (callback: any) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on('transcript:error', handler);
+      return () => ipcRenderer.removeListener('transcript:error', handler);
+    },
+    onQueueUpdate: (callback: any) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on('transcription:queue-updated', handler);
+      return () => ipcRenderer.removeListener('transcription:queue-updated', handler);
+    },
+  },
   playlists: {
     create: (name: string, description?: string) => ipcRenderer.invoke('playlists:create', name, description),
     getAll: () => ipcRenderer.invoke('playlists:getAll'),

@@ -17,8 +17,15 @@ import {
   upsertLibraryItem, toRelativePath,
 } from './services/database';
 import { SyncManager } from './services/sync/sync-manager';
-import type { DownloadRequest, LocalPlaylistVideoItem } from '../shared/types';
+import { transcriptionQueueManager } from './services/transcription-queue-manager';
+import type { DownloadRequest, LocalPlaylistVideoItem, TranscriptOptions } from '../shared/types';
 import type { IncomingMessage } from 'http';
+import {
+  getTranscript,
+  searchTranscripts,
+  getAllTranscripts,
+  deleteTranscript,
+} from './services/database';
 
 // GitHub release types
 interface GitHubAsset {
@@ -278,6 +285,68 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('library:getStats', () => {
     return getLibraryStats();
+  });
+
+  // ─── Transcripts ─────────────────────────────────────────────────────────────
+
+  ipcMain.handle('transcripts:start', async (_event, videoId: string, options?: TranscriptOptions) => {
+    return transcriptionQueueManager.enqueue(videoId, options);
+  });
+
+  ipcMain.handle('transcripts:cancel', (_event, videoId: string) => {
+    return transcriptionQueueManager.cancel(videoId);
+  });
+
+  ipcMain.handle('transcripts:get', (_event, videoId: string) => {
+    return getTranscript(videoId);
+  });
+
+  ipcMain.handle('transcripts:getAll', (_event, status?: string) => {
+    return getAllTranscripts(status);
+  });
+
+  ipcMain.handle('transcripts:search', (_event, query: string, limit?: number) => {
+    return searchTranscripts(query, limit);
+  });
+
+  ipcMain.handle('transcripts:delete', (_event, videoId: string) => {
+    deleteTranscript(videoId);
+  });
+
+  ipcMain.handle('transcripts:getQueue', () => {
+    return transcriptionQueueManager.getQueue();
+  });
+
+  ipcMain.handle('transcripts:checkAvailability', () => {
+    return transcriptionQueueManager.checkAvailability();
+  });
+
+  ipcMain.handle('transcripts:export', async (_event, videoId: string, format: 'txt' | 'srt' | 'vtt') => {
+    const transcript = getTranscript(videoId);
+    if (!transcript || transcript.status !== 'completed') {
+      throw new Error('Transcript not found or not completed');
+    }
+
+    const segments = JSON.parse(transcript.transcriptJson) as Array<{start: number; end: number; text: string}>;
+
+    if (format === 'txt') {
+      return transcript.transcriptText;
+    } else if (format === 'srt') {
+      return segments.map((seg, i) => {
+        const startTime = formatSrtTime(seg.start);
+        const endTime = formatSrtTime(seg.end);
+        return `${i + 1}\n${startTime} --> ${endTime}\n${seg.text}\n`;
+      }).join('\n');
+    } else if (format === 'vtt') {
+      const body = segments.map((seg) => {
+        const startTime = formatVttTime(seg.start);
+        const endTime = formatVttTime(seg.end);
+        return `${startTime} --> ${endTime}\n${seg.text}\n`;
+      }).join('\n');
+      return `WEBVTT\n\n${body}`;
+    }
+
+    throw new Error(`Unsupported export format: ${format}`);
   });
 
   // ─── Sync ──────────────────────────────────────────────────────────────────
@@ -647,4 +716,21 @@ export function registerIpcHandlers(): void {
     updateLocalPlaylist(targetId, { lastSyncedAt: new Date().toISOString() });
     return getLocalPlaylist(targetId);
   });
+}
+
+// Helper functions for transcript export formats
+function formatSrtTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 1000);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+}
+
+function formatVttTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 1000);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
 }

@@ -280,6 +280,21 @@ export interface ElectronAPI {
     getRecent: (limit: number) => Promise<LibraryItem[]>;
     getStats: () => Promise<{ totalItems: number; totalSize: number; downloadedCount: number }>;
   };
+  transcripts: {
+    start: (videoId: string, options?: TranscriptOptions) => Promise<number>;
+    cancel: (videoId: string) => Promise<boolean>;
+    get: (videoId: string) => Promise<Transcript | null>;
+    getAll: (status?: string) => Promise<Transcript[]>;
+    search: (query: string, limit?: number) => Promise<TranscriptSearchResult[]>;
+    delete: (videoId: string) => Promise<void>;
+    getQueue: () => Promise<any[]>;
+    checkAvailability: () => Promise<{ ffmpeg: boolean; whisperLocal: boolean; whisperAPI: boolean }>;
+    export: (videoId: string, format: 'txt' | 'srt' | 'vtt') => Promise<string>;
+    onProgress: (callback: (data: { videoId: string; transcriptId: number; status: string; progress: number }) => void) => () => void;
+    onComplete: (callback: (data: { videoId: string; transcript: Transcript }) => void) => () => void;
+    onError: (callback: (data: { videoId: string; transcriptId: number; error: string }) => void) => () => void;
+    onQueueUpdate: (callback: (queue: any[]) => void) => () => void;
+  };
   playlists: {
     create: (name: string, description?: string) => Promise<LocalPlaylist>;
     getAll: () => Promise<LocalPlaylist[]>;
