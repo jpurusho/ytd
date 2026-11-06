@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { DownloadEngine } from './download-engine';
 import { fileIntegrityService } from './file-integrity';
+import { retryManager, DEFAULT_RETRY_CONFIG } from './retry-manager';
 import { logger } from './logger';
 import {
   addToQueue, getQueue, getQueueItem, updateQueueItem, deleteQueueItem,
@@ -95,11 +96,24 @@ export class QueueManager {
     const pending = getPendingQueueItems();
     const slotsAvailable = this.maxConcurrent - activeCount;
 
-    for (let i = 0; i < Math.min(slotsAvailable, pending.length); i++) {
-      const item = pending[i];
+    // Filter pending items: only process those ready for retry
+    const readyItems = pending.filter(item =>
+      retryManager.isRetryReady(item.nextRetryAt)
+    );
+
+    for (let i = 0; i < Math.min(slotsAvailable, readyItems.length); i++) {
+      const item = readyItems[i];
+
+      logger.info(`[QueueManager] Starting download for ${item.videoId}`, {
+        retryCount: item.retryCount || 0,
+        maxRetries: item.maxRetries || DEFAULT_RETRY_CONFIG.maxRetries,
+      });
+
       updateQueueItem(item.id, {
         status: 'downloading',
         started_at: new Date().toISOString(),
+        error: null,
+        nextRetryAt: null,
       });
       this.engine.startDownload({ ...item, status: 'downloading' });
     }
@@ -191,12 +205,62 @@ export class QueueManager {
   }
 
   private handleError(queueId: number, error: string): void {
-    updateQueueItem(queueId, {
-      status: 'failed',
-      error,
-    });
+    const item = getQueueItem(queueId);
+    if (!item) return;
 
-    this.sendToRenderer('download:error', { queueId, error });
+    const retryCount = (item.retryCount || 0) + 1;
+    const maxRetries = item.maxRetries || DEFAULT_RETRY_CONFIG.maxRetries;
+
+    // Check if we should retry
+    if (retryManager.shouldRetry(retryCount - 1, maxRetries, error)) {
+      const nextRetryTime = retryManager.getNextRetryTime(retryCount - 1);
+      const delay = retryManager.formatDelay(
+        retryManager.calculateDelay(retryCount - 1)
+      );
+
+      logger.info(`[QueueManager] Scheduling retry ${retryCount}/${maxRetries} for ${item.videoId} in ${delay}`);
+
+      updateQueueItem(queueId, {
+        status: 'pending',
+        error: `${error} (will retry in ${delay})`,
+        retryCount,
+        nextRetryAt: nextRetryTime.toISOString(),
+        progress: 0,
+        speed: null,
+        eta: null,
+      });
+
+      this.sendToRenderer('download:error', {
+        queueId,
+        error: `${error} - Retry ${retryCount}/${maxRetries} in ${delay}`,
+      });
+
+      // Schedule retry check
+      setTimeout(() => {
+        logger.info(`[QueueManager] Retry time reached for ${item.videoId}, attempting retry ${retryCount}`);
+        this.processNext();
+      }, retryManager.calculateDelay(retryCount - 1));
+
+    } else {
+      // Max retries reached or permanent error
+      logger.error(`[QueueManager] Download failed permanently for ${item.videoId}`, {
+        error,
+        retryCount,
+        maxRetries,
+      });
+
+      updateQueueItem(queueId, {
+        status: 'failed',
+        error: `${error} (${retryCount - 1} retries exhausted)`,
+        retryCount,
+      });
+
+      this.sendToRenderer('download:error', {
+        queueId,
+        error: `${error} - Failed after ${retryCount - 1} retries`,
+      });
+    }
+
     this.sendQueueUpdate();
     this.processNext();
   }

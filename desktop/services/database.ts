@@ -136,7 +136,10 @@ export function initDatabase(): void {
       scheduled_at TEXT,
       started_at TEXT,
       completed_at TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now')),
+      retry_count INTEGER DEFAULT 0,
+      max_retries INTEGER DEFAULT 3,
+      next_retry_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS app_settings (
@@ -224,6 +227,19 @@ export function initDatabase(): void {
   const playlistItemColNames = new Set(playlistItemCols.map((c: ColumnInfo) => c.name));
   if (!playlistItemColNames.has('published_at')) {
     db.exec('ALTER TABLE local_playlist_items ADD COLUMN published_at TEXT');
+  }
+
+  // Migration: add retry columns to queue if missing
+  const queueCols = db.pragma('table_info(queue)') as any[];
+  const queueColNames = new Set(queueCols.map((c: ColumnInfo) => c.name));
+  if (!queueColNames.has('retry_count')) {
+    db.exec('ALTER TABLE queue ADD COLUMN retry_count INTEGER DEFAULT 0');
+  }
+  if (!queueColNames.has('max_retries')) {
+    db.exec('ALTER TABLE queue ADD COLUMN max_retries INTEGER DEFAULT 3');
+  }
+  if (!queueColNames.has('next_retry_at')) {
+    db.exec('ALTER TABLE queue ADD COLUMN next_retry_at TEXT');
   }
 
   runMigrations();

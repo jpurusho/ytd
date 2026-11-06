@@ -100,6 +100,9 @@ export interface QueueItem {
   startedAt?: string;
   completedAt?: string;
   createdAt: string;
+  retryCount?: number;
+  maxRetries?: number;
+  nextRetryAt?: string;
 }
 
 export interface DownloadRecord {
