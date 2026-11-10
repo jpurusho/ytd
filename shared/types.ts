@@ -298,6 +298,13 @@ export interface ElectronAPI {
     onError: (callback: (data: { videoId: string; transcriptId: number; error: string }) => void) => () => void;
     onQueueUpdate: (callback: (queue: any[]) => void) => () => void;
   };
+  claude: {
+    isAvailable: () => Promise<boolean>;
+    summarize: (videoId: string) => Promise<string>;
+    generateChapters: (videoId: string) => Promise<Array<{ timestamp: number; title: string; description: string }>>;
+    askQuestion: (videoId: string, question: string) => Promise<string>;
+    extractTopics: (videoId: string) => Promise<string[]>;
+  };
   playlists: {
     create: (name: string, description?: string) => Promise<LocalPlaylist>;
     getAll: () => Promise<LocalPlaylist[]>;

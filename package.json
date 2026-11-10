@@ -22,6 +22,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@tanstack/react-query": "^5.106.1",
     "@types/react-window": "^1.8.8",
     "better-sqlite3": "^13.0.3",

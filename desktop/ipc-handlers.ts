@@ -18,6 +18,7 @@ import {
 } from './services/database';
 import { SyncManager } from './services/sync/sync-manager';
 import { transcriptionQueueManager } from './services/transcription-queue-manager';
+import { claudeAnalysisService } from './services/claude-analysis';
 import type { DownloadRequest, LocalPlaylistVideoItem, TranscriptOptions } from '../shared/types';
 import type { IncomingMessage } from 'http';
 import {
@@ -25,6 +26,7 @@ import {
   searchTranscripts,
   getAllTranscripts,
   deleteTranscript,
+  getLibraryItem,
 } from './services/database';
 
 // GitHub release types
@@ -347,6 +349,62 @@ export function registerIpcHandlers(): void {
     }
 
     throw new Error(`Unsupported export format: ${format}`);
+  });
+
+  // ─── Claude Analysis ──────────────────────────────────────────────────────
+
+  ipcMain.handle('claude:isAvailable', async () => {
+    return claudeAnalysisService.isAvailable();
+  });
+
+  ipcMain.handle('claude:summarize', async (_event, videoId: string) => {
+    const transcript = getTranscript(videoId);
+    if (!transcript || transcript.status !== 'completed') {
+      throw new Error('Transcript not found or not completed');
+    }
+
+    const libraryItem = getLibraryItem(videoId);
+    const videoTitle = libraryItem?.title || 'Untitled Video';
+
+    return claudeAnalysisService.summarize(transcript.transcriptText, videoTitle);
+  });
+
+  ipcMain.handle('claude:generateChapters', async (_event, videoId: string) => {
+    const transcript = getTranscript(videoId);
+    if (!transcript || transcript.status !== 'completed') {
+      throw new Error('Transcript not found or not completed');
+    }
+
+    const libraryItem = getLibraryItem(videoId);
+    const videoTitle = libraryItem?.title || 'Untitled Video';
+
+    const segments = JSON.parse(transcript.transcriptJson) as Array<{start: number; end: number; text: string}>;
+
+    return claudeAnalysisService.generateChapters(transcript.transcriptText, segments, videoTitle);
+  });
+
+  ipcMain.handle('claude:askQuestion', async (_event, videoId: string, question: string) => {
+    const transcript = getTranscript(videoId);
+    if (!transcript || transcript.status !== 'completed') {
+      throw new Error('Transcript not found or not completed');
+    }
+
+    const libraryItem = getLibraryItem(videoId);
+    const videoTitle = libraryItem?.title || 'Untitled Video';
+
+    return claudeAnalysisService.askQuestion(transcript.transcriptText, question, videoTitle);
+  });
+
+  ipcMain.handle('claude:extractTopics', async (_event, videoId: string) => {
+    const transcript = getTranscript(videoId);
+    if (!transcript || transcript.status !== 'completed') {
+      throw new Error('Transcript not found or not completed');
+    }
+
+    const libraryItem = getLibraryItem(videoId);
+    const videoTitle = libraryItem?.title || 'Untitled Video';
+
+    return claudeAnalysisService.extractTopics(transcript.transcriptText, videoTitle);
   });
 
   // ─── Sync ──────────────────────────────────────────────────────────────────

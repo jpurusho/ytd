@@ -25,6 +25,12 @@ export default function Settings() {
   const [downloadPercent, setDownloadPercent] = useState(0);
   const [downloadedPath, setDownloadedPath] = useState('');
 
+  // API Keys
+  const [openaiKey, setOpenaiKey] = useState('');
+  const [claudeKey, setClaudeKey] = useState('');
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [showClaudeKey, setShowClaudeKey] = useState(false);
+
   useEffect(() => {
     loadSettings();
     window.api.app.getVersion().then(setVersion);
@@ -47,6 +53,23 @@ export default function Settings() {
 
     const browser = await window.api.app.getSetting('cookie_browser');
     if (browser) setCookieBrowser(browser);
+
+    // Load API keys
+    const openai = await window.api.app.getSetting('openai_api_key');
+    if (openai) setOpenaiKey(openai);
+
+    const claude = await window.api.app.getSetting('claude_api_key');
+    if (claude) setClaudeKey(claude);
+  }
+
+  async function handleSaveAPIKeys() {
+    if (openaiKey.trim()) {
+      await window.api.app.setSetting('openai_api_key', openaiKey.trim());
+    }
+    if (claudeKey.trim()) {
+      await window.api.app.setSetting('claude_api_key', claudeKey.trim());
+    }
+    showSaved();
   }
 
   async function handleSelectDir() {
@@ -223,6 +246,79 @@ export default function Settings() {
           </Box>
         </Paper>
       )}
+
+      {/* API Keys */}
+      <Paper sx={{ p: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', mb: 2 }} elevation={0}>
+        <Typography variant="subtitle2" sx={{ mb: 1.5 }}>API Keys</Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+          Configure API keys for optional cloud services
+        </Typography>
+
+        {/* OpenAI API Key */}
+        <Box mb={2}>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
+            OpenAI API Key
+            <Chip label="Optional" size="small" sx={{ ml: 1, height: 18, fontSize: '0.7rem' }} />
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+            For faster cloud transcription ($0.006/min). Default is free local Whisper.
+          </Typography>
+          <Box display="flex" gap={1}>
+            <TextField
+              size="small"
+              fullWidth
+              type={showOpenaiKey ? 'text' : 'password'}
+              placeholder="sk-..."
+              value={openaiKey}
+              onChange={(e) => setOpenaiKey(e.target.value)}
+            />
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setShowOpenaiKey(!showOpenaiKey)}
+            >
+              {showOpenaiKey ? 'Hide' : 'Show'}
+            </Button>
+          </Box>
+        </Box>
+
+        {/* Claude API Key */}
+        <Box mb={2}>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
+            Anthropic Claude API Key
+            <Chip label="Optional" size="small" sx={{ ml: 1, height: 18, fontSize: '0.7rem' }} />
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+            For AI-powered transcript analysis (summarize, Q&A, chapters).
+          </Typography>
+          <Box display="flex" gap={1}>
+            <TextField
+              size="small"
+              fullWidth
+              type={showClaudeKey ? 'text' : 'password'}
+              placeholder="sk-ant-..."
+              value={claudeKey}
+              onChange={(e) => setClaudeKey(e.target.value)}
+            />
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setShowClaudeKey(!showClaudeKey)}
+            >
+              {showClaudeKey ? 'Hide' : 'Show'}
+            </Button>
+          </Box>
+        </Box>
+
+        <Button
+          variant="contained"
+          size="small"
+          onClick={handleSaveAPIKeys}
+          disabled={!openaiKey.trim() && !claudeKey.trim()}
+        >
+          Save API Keys
+        </Button>
+      </Paper>
 
       {/* Version & Updates */}
       <Paper sx={{ p: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'divider' }} elevation={0}>

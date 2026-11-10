@@ -92,6 +92,13 @@ const api: ElectronAPI = {
       return () => ipcRenderer.removeListener('transcription:queue-updated', handler);
     },
   },
+  claude: {
+    isAvailable: () => ipcRenderer.invoke('claude:isAvailable'),
+    summarize: (videoId: string) => ipcRenderer.invoke('claude:summarize', videoId),
+    generateChapters: (videoId: string) => ipcRenderer.invoke('claude:generateChapters', videoId),
+    askQuestion: (videoId: string, question: string) => ipcRenderer.invoke('claude:askQuestion', videoId, question),
+    extractTopics: (videoId: string) => ipcRenderer.invoke('claude:extractTopics', videoId),
+  },
   playlists: {
     create: (name: string, description?: string) => ipcRenderer.invoke('playlists:create', name, description),
     getAll: () => ipcRenderer.invoke('playlists:getAll'),
