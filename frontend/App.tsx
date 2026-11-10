@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ErrorBoundary from './components/ErrorBoundary/ErrorBoundary';
 import ErrorToast from './components/ErrorToast/ErrorToast';
+import DependencyCheck from './components/DependencyCheck/DependencyCheck';
 import { QueryProvider } from './providers/QueryProvider';
 import { useAuthStore } from './stores/authStore';
 
@@ -25,6 +26,7 @@ function AppContent() {
   return (
     <>
       <ErrorToast />
+      <DependencyCheck />
       {user ? <Dashboard /> : <Login />}
     </>
   );
