@@ -145,12 +145,23 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
     const newTime = Array.isArray(value) ? value[0] : value;
     const wasPlaying = !el.paused;
 
-    console.log('[SeekCommit] Committing seek to:', newTime, '| Was playing:', wasPlaying, '| Current pos:', el.currentTime);
+    console.log('[SeekCommit] Committing seek to:', newTime, '| Was playing:', wasPlaying, '| Current pos:', el.currentTime, '| Ready state:', el.readyState, '| Duration:', el.duration, '| Seekable:', el.seekable.length > 0 ? `${el.seekable.start(0)} - ${el.seekable.end(0)}` : 'none');
+
+    // Check if video is ready for seeking
+    if (el.readyState < 2) {
+      console.error('[SeekCommit] Video not ready for seeking! readyState:', el.readyState);
+      seekingRef.current = false;
+      return;
+    }
+
+    // Clamp to seekable range
+    const clampedTime = Math.max(0, Math.min(newTime, el.duration || 0));
+    console.log('[SeekCommit] Clamped time:', clampedTime);
 
     seekingRef.current = true;
-    el.currentTime = newTime;
+    el.currentTime = clampedTime;
 
-    console.log('[SeekCommit] Set currentTime, now video is at:', el.currentTime);
+    console.log('[SeekCommit] After setting currentTime:', el.currentTime, '| seeking property:', el.seeking);
 
     if (wasPlaying) {
       el.play().catch((err) => {
