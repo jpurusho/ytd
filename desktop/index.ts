@@ -218,7 +218,10 @@ app.whenReady().then(async () => {
   protocol.handle('local-media', (request) => {
     const filePath = decodeURIComponent(request.url.replace('local-media://', ''));
 
+    console.log('[local-media] Request:', { url: request.url, decoded: filePath });
+
     if (!fs.existsSync(filePath)) {
+      console.error('[local-media] File not found:', filePath);
       return new Response('Not found', { status: 404 });
     }
 
@@ -253,10 +256,11 @@ app.whenReady().then(async () => {
               try { controller.close(); } catch {}
             }
           });
-          fileStream.on('error', () => {
+          fileStream.on('error', (err) => {
+            console.error('[local-media] Stream error:', err, { filePath });
             if (!closed) {
               closed = true;
-              try { controller.close(); } catch {}
+              try { controller.error(err); } catch {}
             }
           });
         },
