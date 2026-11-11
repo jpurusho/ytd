@@ -393,8 +393,27 @@ export function updateQueueItem(id: number, updates: Partial<Record<string, any>
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
 
+  // Map camelCase to snake_case for database columns
+  const columnMap: Record<string, string> = {
+    videoId: 'video_id',
+    thumbnailUrl: 'thumbnail_url',
+    startTime: 'start_time',
+    endTime: 'end_time',
+    downloadedBytes: 'downloaded_bytes',
+    totalBytes: 'total_bytes',
+    tempFilePath: 'temp_file_path',
+    scheduledAt: 'scheduled_at',
+    startedAt: 'started_at',
+    completedAt: 'completed_at',
+    createdAt: 'created_at',
+    retryCount: 'retry_count',
+    maxRetries: 'max_retries',
+    nextRetryAt: 'next_retry_at',
+  };
+
   for (const [key, value] of Object.entries(updates)) {
-    fields.push(`${key} = ?`);
+    const dbColumn = columnMap[key] || key;
+    fields.push(`${dbColumn} = ?`);
     values.push(value);
   }
 
@@ -626,6 +645,9 @@ function rowToQueueItem(row: DatabaseRow): QueueItem {
     startedAt: row.started_at ?? undefined,
     completedAt: row.completed_at ?? undefined,
     createdAt: row.created_at,
+    retryCount: row.retry_count ?? undefined,
+    maxRetries: row.max_retries ?? undefined,
+    nextRetryAt: row.next_retry_at ?? undefined,
   };
 }
 
