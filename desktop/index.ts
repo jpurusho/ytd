@@ -165,7 +165,15 @@ function createWindow(): void {
 
 // Register custom protocols before app is ready
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'local-media', privileges: { stream: true, bypassCSP: true, supportFetchAPI: true } },
+  {
+    scheme: 'local-media',
+    privileges: {
+      standard: true,      // CRITICAL: Ensures consistent origin for range requests
+      stream: true,
+      bypassCSP: true,
+      supportFetchAPI: true
+    }
+  },
 ]);
 
 function startProductionServer(): Promise<number> {
