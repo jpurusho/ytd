@@ -218,7 +218,13 @@ app.whenReady().then(async () => {
   protocol.handle('local-media', async (request) => {
     const filePath = decodeURIComponent(request.url.replace('local-media://', ''));
 
-    console.log('[local-media] Request:', { url: request.url, decoded: filePath, range: request.headers.get('range') });
+    console.log('[local-media] Request:', {
+      method: request.method,
+      url: request.url,
+      decoded: filePath,
+      range: request.headers.get('range'),
+      allHeaders: Array.from(request.headers.entries())
+    });
 
     if (!fs.existsSync(filePath)) {
       console.error('[local-media] File not found:', filePath);
@@ -239,6 +245,19 @@ app.whenReady().then(async () => {
       '.wav': 'audio/wav',
     };
     const mimeType = mimeTypes[ext] || 'application/octet-stream';
+
+    // Handle HEAD requests - browser checks if ranges are supported
+    if (request.method === 'HEAD') {
+      console.log('[local-media] HEAD request - advertising range support');
+      return new Response(null, {
+        status: 200,
+        headers: {
+          'Content-Length': String(fileSize),
+          'Accept-Ranges': 'bytes',
+          'Content-Type': mimeType,
+        },
+      });
+    }
 
     // Handle range requests for seeking
     if (rangeHeader) {
