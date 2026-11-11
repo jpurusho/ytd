@@ -111,9 +111,13 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
     if (el) setDuration(el.duration);
   }
 
+  function handleSeeked() {
+    // Video has finished seeking, safe to resume time updates
+    setSeeking(false);
+  }
+
   function handleSeekChange(_: any, value: number | number[]) {
     const newTime = Array.isArray(value) ? value[0] : value;
-    console.log('Seek change:', newTime);
     setSeeking(true);
     setCurrentTime(newTime);
   }
@@ -121,7 +125,6 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
   function handleSeekCommit(_: any, value: number | number[]) {
     const el = videoRef.current;
     if (!el) {
-      console.error('No video element for seek');
       setSeeking(false);
       return;
     }
@@ -129,19 +132,15 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
     const newTime = Array.isArray(value) ? value[0] : value;
     const wasPlaying = !el.paused;
 
-    console.log('Seek commit:', { newTime, wasPlaying, currentTime: el.currentTime });
-
+    // Keep seeking flag true until 'seeked' event fires
     el.currentTime = newTime;
 
-    // Wait for seek to complete
-    setTimeout(() => {
-      if (wasPlaying && el.paused) {
-        el.play().catch((err) => {
-          console.error('Resume play after seek failed:', err);
-        });
-      }
-      setSeeking(false);
-    }, 50);
+    // Resume playing if it was playing before
+    if (wasPlaying) {
+      el.play().catch((err) => {
+        console.error('Resume play after seek failed:', err);
+      });
+    }
   }
 
   function toggleMute() {
@@ -297,6 +296,7 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
                   src={videoUrl}
                   onTimeUpdate={handleTimeUpdate}
                   onLoadedMetadata={handleLoadedMetadata}
+                  onSeeked={handleSeeked}
                   onEnded={() => setPlaying(false)}
                 />
               </Box>
@@ -307,6 +307,7 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
                 style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
+                onSeeked={handleSeeked}
                 onEnded={() => setPlaying(false)}
                 onError={(e) => {
                   const video = e.target as HTMLVideoElement;
