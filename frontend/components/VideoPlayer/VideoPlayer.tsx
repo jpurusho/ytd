@@ -118,7 +118,18 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
 
   function handleSeekCommit(_: any, value: number | number[]) {
     const el = videoRef.current;
-    if (el) { el.currentTime = value as number; }
+    if (!el) return;
+
+    const wasPlaying = !el.paused;
+    el.currentTime = value as number;
+
+    // Resume playing if it was playing before
+    if (wasPlaying) {
+      el.play().catch((err) => {
+        console.error('Resume play after seek failed:', err);
+      });
+    }
+
     setSeeking(false);
   }
 
