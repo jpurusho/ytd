@@ -214,30 +214,71 @@ app.whenReady().then(async () => {
     prodServerPort = await startProductionServer();
   }
 
-  // Handle local-media:// protocol with range request support for seeking
-  // Use net.fetch for Electron 45+ compatibility
+  // Handle local-media:// protocol with manual range request support for seeking
   protocol.handle('local-media', async (request) => {
     const filePath = decodeURIComponent(request.url.replace('local-media://', ''));
 
-    console.log('[local-media] Request:', { url: request.url, decoded: filePath });
+    console.log('[local-media] Request:', { url: request.url, decoded: filePath, range: request.headers.get('range') });
 
     if (!fs.existsSync(filePath)) {
       console.error('[local-media] File not found:', filePath);
       return new Response('Not found', { status: 404 });
     }
 
-    // Use file:// URL for Electron's net.fetch
-    const fileUrl = `file://${filePath}`;
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+    const rangeHeader = request.headers.get('range');
 
-    try {
-      const response = await net.fetch(fileUrl, {
-        headers: request.headers,
+    // Determine MIME type
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.mp3': 'audio/mpeg',
+      '.ogg': 'audio/ogg',
+      '.wav': 'audio/wav',
+    };
+    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+
+    // Handle range requests for seeking
+    if (rangeHeader) {
+      const parts = rangeHeader.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = (end - start) + 1;
+
+      console.log('[local-media] Range request:', { start, end, chunkSize, fileSize });
+
+      const stream = fs.createReadStream(filePath, { start, end });
+      const chunks: Buffer[] = [];
+
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+
+      const buffer = Buffer.concat(chunks);
+
+      return new Response(buffer, {
+        status: 206,
+        headers: {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': String(chunkSize),
+          'Content-Type': mimeType,
+        },
       });
-      return response;
-    } catch (err) {
-      console.error('[local-media] Fetch error:', err);
-      return new Response('Internal error', { status: 500 });
     }
+
+    // Full file request
+    const buffer = fs.readFileSync(filePath);
+    return new Response(buffer, {
+      status: 200,
+      headers: {
+        'Content-Length': String(fileSize),
+        'Accept-Ranges': 'bytes',
+        'Content-Type': mimeType,
+      },
+    });
   });
 
   if (process.platform === 'darwin' && app.dock) {
