@@ -41,7 +41,7 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
   const [videoUrl, setVideoUrl] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [seeking, setSeeking] = useState(false);
+  const seekingRef = useRef(false); // Use ref instead of state for synchronous updates
   const [position, setPosition] = useState({ x: 16, y: 16 });
   const [size, setSize] = useState({ w: 420, h: 300 });
   const dragging = useRef(false);
@@ -101,7 +101,7 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
   }
 
   function handleTimeUpdate() {
-    if (seeking) return;
+    if (seekingRef.current) return; // Check ref synchronously
     const el = videoRef.current;
     if (el) setCurrentTime(el.currentTime);
   }
@@ -113,19 +113,19 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
 
   function handleSeeked() {
     // Video has finished seeking, safe to resume time updates
-    setSeeking(false);
+    seekingRef.current = false;
   }
 
   function handleSeekChange(_: any, value: number | number[]) {
     const newTime = Array.isArray(value) ? value[0] : value;
-    setSeeking(true);
+    seekingRef.current = true; // Set ref synchronously
     setCurrentTime(newTime);
   }
 
   function handleSeekCommit(_: any, value: number | number[]) {
     const el = videoRef.current;
     if (!el) {
-      setSeeking(false);
+      seekingRef.current = false;
       return;
     }
 
@@ -133,6 +133,7 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
     const wasPlaying = !el.paused;
 
     // Keep seeking flag true until 'seeked' event fires
+    seekingRef.current = true;
     el.currentTime = newTime;
 
     // Resume playing if it was playing before
