@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "dev": "concurrently -k \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
-    "dev:electron": "wait-on tcp:5173 && tsc -p tsconfig.main.json && electron .",
+    "dev:electron": "wait-on tcp:5173 && (tsc -p tsconfig.main.json || true) && electron .",
     "prebuild": "node -e \"const{config}=require('dotenv');config();const fs=require('fs');fs.mkdirSync('dist',{recursive:true});const c={clientId:process.env.GOOGLE_CLIENT_ID||'',clientSecret:process.env.GOOGLE_CLIENT_SECRET||''};if(c.clientId)fs.writeFileSync('dist/oauth-config.json',JSON.stringify(c));\"",
     "build": "tsc -p tsconfig.main.json && vite build",
     "download-bins": "bash scripts/download-binaries.sh",
