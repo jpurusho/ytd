@@ -101,30 +101,43 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
   }
 
   function handleTimeUpdate() {
-    if (seekingRef.current) return; // Check ref synchronously
     const el = videoRef.current;
-    if (el) setCurrentTime(el.currentTime);
+    if (!el) return;
+
+    if (seekingRef.current) {
+      console.log('[TimeUpdate] BLOCKED - seeking in progress, video at:', el.currentTime);
+      return;
+    }
+
+    console.log('[TimeUpdate] Updating UI time to:', el.currentTime);
+    setCurrentTime(el.currentTime);
   }
 
   function handleLoadedMetadata() {
     const el = videoRef.current;
-    if (el) setDuration(el.duration);
+    if (el) {
+      console.log('[LoadedMetadata] Duration:', el.duration);
+      setDuration(el.duration);
+    }
   }
 
   function handleSeeked() {
-    // Video has finished seeking, safe to resume time updates
+    const el = videoRef.current;
+    console.log('[Seeked] Seek complete! Video now at:', el?.currentTime, '- Clearing seeking flag');
     seekingRef.current = false;
   }
 
   function handleSeekChange(_: any, value: number | number[]) {
     const newTime = Array.isArray(value) ? value[0] : value;
-    seekingRef.current = true; // Set ref synchronously
+    console.log('[SeekChange] User dragging to:', newTime, '- Setting seeking flag');
+    seekingRef.current = true;
     setCurrentTime(newTime);
   }
 
   function handleSeekCommit(_: any, value: number | number[]) {
     const el = videoRef.current;
     if (!el) {
+      console.error('[SeekCommit] No video element!');
       seekingRef.current = false;
       return;
     }
@@ -132,14 +145,16 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
     const newTime = Array.isArray(value) ? value[0] : value;
     const wasPlaying = !el.paused;
 
-    // Keep seeking flag true until 'seeked' event fires
+    console.log('[SeekCommit] Committing seek to:', newTime, '| Was playing:', wasPlaying, '| Current pos:', el.currentTime);
+
     seekingRef.current = true;
     el.currentTime = newTime;
 
-    // Resume playing if it was playing before
+    console.log('[SeekCommit] Set currentTime, now video is at:', el.currentTime);
+
     if (wasPlaying) {
       el.play().catch((err) => {
-        console.error('Resume play after seek failed:', err);
+        console.error('[SeekCommit] Resume play failed:', err);
       });
     }
   }
