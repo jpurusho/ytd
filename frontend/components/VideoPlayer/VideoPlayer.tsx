@@ -287,8 +287,15 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={() => setPlaying(false)}
                 onError={(e) => {
-                  console.error('Video error:', e);
-                  setError('Video playback error. Try opening in system player.');
+                  const video = e.target as HTMLVideoElement;
+                  const errorDetails = video.error ? {
+                    code: video.error.code,
+                    message: video.error.message,
+                    // 1=ABORTED, 2=NETWORK, 3=DECODE, 4=SRC_NOT_SUPPORTED
+                    type: ['', 'MEDIA_ERR_ABORTED', 'MEDIA_ERR_NETWORK', 'MEDIA_ERR_DECODE', 'MEDIA_ERR_SRC_NOT_SUPPORTED'][video.error.code]
+                  } : 'Unknown';
+                  console.error('Video error:', errorDetails, e);
+                  setError(`Video playback error${video.error ? ` (${video.error.code}: ${['', 'Aborted', 'Network', 'Decode', 'Format not supported'][video.error.code]})` : ''}. Try opening in system player.`);
                   setPlaying(false);
                 }}
                 onClick={togglePlay}
