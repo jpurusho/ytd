@@ -169,6 +169,7 @@ protocol.registerSchemesAsPrivileged([
     scheme: 'local-media',
     privileges: {
       standard: true,      // CRITICAL: Ensures consistent origin for range requests
+      secure: true,        // CRITICAL: Passes Chromium's URL safety check for media
       stream: true,
       bypassCSP: true,
       supportFetchAPI: true
