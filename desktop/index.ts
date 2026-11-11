@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme, Menu, protocol, session } from 'electron';
+import { app, BrowserWindow, nativeTheme, Menu, protocol, session, net } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
