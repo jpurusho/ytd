@@ -323,14 +323,17 @@ export class DownloadEngine {
       '-o', outputTemplate,
     ];
 
-    // Resolution/quality selection — use broad fallback chains to avoid "format not available"
+    // Resolution/quality selection — prefer web-compatible codecs (H.264 video, AAC audio)
+    // This ensures videos play in the built-in HTML5 player
     if (item.format === 'mp3') {
       args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
     } else if (item.resolution) {
-      args.push('-f', `bestvideo[height<=${item.resolution}]+bestaudio/bestvideo+bestaudio/best[height<=${item.resolution}]/best`);
+      // Prefer h264+aac, fall back to vp9+opus, then any format
+      args.push('-f', `bestvideo[vcodec^=avc1][height<=${item.resolution}]+bestaudio[acodec^=mp4a]/bestvideo[vcodec^=vp9][height<=${item.resolution}]+bestaudio/bestvideo[height<=${item.resolution}]+bestaudio/best[height<=${item.resolution}]/best`);
       args.push('--merge-output-format', item.format);
     } else {
-      args.push('-f', 'bestvideo+bestaudio/best');
+      // Prefer h264+aac for web compatibility
+      args.push('-f', 'bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[vcodec^=vp9]+bestaudio/bestvideo+bestaudio/best');
       args.push('--merge-output-format', item.format);
     }
 
