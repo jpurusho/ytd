@@ -256,7 +256,7 @@ export default function Settings() {
 
         {/* OpenAI API Key */}
         <Box mb={2}>
-          <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
+          <Typography variant="body2" component="div" sx={{ mb: 1, fontWeight: 500 }}>
             OpenAI API Key
             <Chip label="Optional" size="small" sx={{ ml: 1, height: 18, fontSize: '0.7rem' }} />
           </Typography>
@@ -284,7 +284,7 @@ export default function Settings() {
 
         {/* Claude API Key */}
         <Box mb={2}>
-          <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
+          <Typography variant="body2" component="div" sx={{ mb: 1, fontWeight: 500 }}>
             Anthropic Claude API Key
             <Chip label="Optional" size="small" sx={{ ml: 1, height: 18, fontSize: '0.7rem' }} />
           </Typography>
