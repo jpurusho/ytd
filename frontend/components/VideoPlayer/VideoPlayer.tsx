@@ -112,25 +112,36 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
   }
 
   function handleSeekChange(_: any, value: number | number[]) {
+    const newTime = Array.isArray(value) ? value[0] : value;
+    console.log('Seek change:', newTime);
     setSeeking(true);
-    setCurrentTime(value as number);
+    setCurrentTime(newTime);
   }
 
   function handleSeekCommit(_: any, value: number | number[]) {
     const el = videoRef.current;
-    if (!el) return;
-
-    const wasPlaying = !el.paused;
-    el.currentTime = value as number;
-
-    // Resume playing if it was playing before
-    if (wasPlaying) {
-      el.play().catch((err) => {
-        console.error('Resume play after seek failed:', err);
-      });
+    if (!el) {
+      console.error('No video element for seek');
+      setSeeking(false);
+      return;
     }
 
-    setSeeking(false);
+    const newTime = Array.isArray(value) ? value[0] : value;
+    const wasPlaying = !el.paused;
+
+    console.log('Seek commit:', { newTime, wasPlaying, currentTime: el.currentTime });
+
+    el.currentTime = newTime;
+
+    // Wait for seek to complete
+    setTimeout(() => {
+      if (wasPlaying && el.paused) {
+        el.play().catch((err) => {
+          console.error('Resume play after seek failed:', err);
+        });
+      }
+      setSeeking(false);
+    }, 50);
   }
 
   function toggleMute() {
