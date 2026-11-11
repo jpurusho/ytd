@@ -354,12 +354,13 @@ export class DownloadEngine {
       args.push('--js-runtimes', `quickjs:${qjsPath}`);
     }
 
-    // Browser cookies for authenticated downloads
-    const useCookies = getSetting('use_browser_cookies');
-    const cookieBrowser = getSetting('cookie_browser') || 'chrome';
-    if (useCookies === 'true') {
-      args.push('--cookies-from-browser', cookieBrowser);
-    }
+    // Browser cookies for authenticated downloads (disabled - Chrome path issues)
+    // Uncomment and configure in Settings if needed
+    // const useCookies = getSetting('use_browser_cookies');
+    // const cookieBrowser = getSetting('cookie_browser') || 'chrome';
+    // if (useCookies === 'true') {
+    //   args.push('--cookies-from-browser', cookieBrowser);
+    // }
 
     args.push(item.url);
     return args;

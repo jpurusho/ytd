@@ -81,11 +81,23 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
     }
   }, [open, record]);
 
-  function togglePlay() {
+  async function togglePlay() {
     const el = videoRef.current;
     if (!el) return;
-    if (playing) { el.pause(); } else { el.play(); }
-    setPlaying(!playing);
+
+    if (playing) {
+      el.pause();
+      setPlaying(false);
+    } else {
+      try {
+        await el.play();
+        setPlaying(true);
+      } catch (err) {
+        console.error('Video play failed:', err);
+        setError(`Playback failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setPlaying(false);
+      }
+    }
   }
 
   function handleTimeUpdate() {
@@ -274,6 +286,11 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
                 onTimeUpdate={handleTimeUpdate}
                 onLoadedMetadata={handleLoadedMetadata}
                 onEnded={() => setPlaying(false)}
+                onError={(e) => {
+                  console.error('Video error:', e);
+                  setError('Video playback error. Try opening in system player.');
+                  setPlaying(false);
+                }}
                 onClick={togglePlay}
               />
             )}
