@@ -215,7 +215,8 @@ app.whenReady().then(async () => {
   }
 
   // Handle local-media:// protocol with range request support for seeking
-  protocol.handle('local-media', (request) => {
+  // Use net.fetch for Electron 45+ compatibility
+  protocol.handle('local-media', async (request) => {
     const filePath = decodeURIComponent(request.url.replace('local-media://', ''));
 
     console.log('[local-media] Request:', { url: request.url, decoded: filePath });
@@ -225,79 +226,18 @@ app.whenReady().then(async () => {
       return new Response('Not found', { status: 404 });
     }
 
-    const stat = fs.statSync(filePath);
-    const fileSize = stat.size;
-    const rangeHeader = request.headers.get('range');
+    // Use file:// URL for Electron's net.fetch
+    const fileUrl = `file://${filePath}`;
 
-    const mimeTypes: Record<string, string> = {
-      '.mp4': 'video/mp4',
-      '.webm': 'video/webm',
-      '.mp3': 'audio/mpeg',
-      '.ogg': 'audio/ogg',
-      '.wav': 'audio/wav',
-    };
-    const ext = path.extname(filePath).toLowerCase();
-    const contentType = mimeTypes[ext] || 'application/octet-stream';
-
-    function createFileStream(filePath: string, opts?: { start?: number; end?: number }): ReadableStream {
-      const fileStream = fs.createReadStream(filePath, opts);
-      let closed = false;
-
-      return new ReadableStream({
-        start(controller) {
-          fileStream.on('data', (chunk) => {
-            if (!closed) {
-              try { controller.enqueue(chunk); } catch { closed = true; }
-            }
-          });
-          fileStream.on('end', () => {
-            if (!closed) {
-              closed = true;
-              try { controller.close(); } catch {}
-            }
-          });
-          fileStream.on('error', (err) => {
-            console.error('[local-media] Stream error:', err, { filePath });
-            if (!closed) {
-              closed = true;
-              try { controller.error(err); } catch {}
-            }
-          });
-        },
-        cancel() {
-          closed = true;
-          fileStream.destroy();
-        },
+    try {
+      const response = await net.fetch(fileUrl, {
+        headers: request.headers,
       });
+      return response;
+    } catch (err) {
+      console.error('[local-media] Fetch error:', err);
+      return new Response('Internal error', { status: 500 });
     }
-
-    if (rangeHeader) {
-      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-      if (match) {
-        const start = parseInt(match[1], 10);
-        const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
-        const chunkSize = end - start + 1;
-
-        return new Response(createFileStream(filePath, { start, end }) as any, {
-          status: 206,
-          headers: {
-            'Content-Type': contentType,
-            'Content-Length': String(chunkSize),
-            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-            'Accept-Ranges': 'bytes',
-          },
-        });
-      }
-    }
-
-    return new Response(createFileStream(filePath) as any, {
-      status: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': String(fileSize),
-        'Accept-Ranges': 'bytes',
-      },
-    });
   });
 
   if (process.platform === 'darwin' && app.dock) {
