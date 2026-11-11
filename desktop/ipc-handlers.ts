@@ -26,7 +26,6 @@ import {
   searchTranscripts,
   getAllTranscripts,
   deleteTranscript,
-  getLibraryItem,
 } from './services/database';
 
 // GitHub release types
@@ -522,17 +521,28 @@ export function registerIpcHandlers(): void {
 
       const latestVersion = release.tag_name?.replace(/^v/, '') || '';
       const zipAsset = (release.assets || []).find((a: GitHubAsset) => a.name?.endsWith('.zip'));
-      const downloadUrl = zipAsset?.browser_download_url || release.html_url || '';
+      const dmgAsset = (release.assets || []).find((a: GitHubAsset) => a.name?.endsWith('.dmg'));
+      const downloadAsset = dmgAsset || zipAsset;
 
       if (!latestVersion) return { status: 'error', message: 'Could not determine latest version' };
 
       const isNewer = latestVersion.localeCompare(currentVersion, undefined, { numeric: true }) > 0;
       if (isNewer) {
-        return { status: 'available', version: latestVersion, url: downloadUrl };
+        // If no downloadable binary, direct user to GitHub for manual update
+        if (!downloadAsset) {
+          return {
+            status: 'manual-update',
+            version: latestVersion,
+            url: release.html_url || '',
+            message: 'New version available. Build from source: git pull && npm install && npm run build'
+          };
+        }
+        return { status: 'available', version: latestVersion, url: downloadAsset.browser_download_url };
       }
       return { status: 'up-to-date', version: currentVersion };
     } catch (err: unknown) {
-      return { status: 'error', message: err.message };
+      const error = err as Error;
+      return { status: 'error', message: error.message };
     }
   });
 

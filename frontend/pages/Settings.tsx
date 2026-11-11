@@ -364,6 +364,17 @@ export default function Settings() {
               sx={{ height: 22, fontSize: '0.75rem', cursor: 'pointer' }}
             />
           )}
+          {updateStatus?.status === 'manual-update' && (
+            <Chip
+              label={`v${updateStatus.version} — view on GitHub`}
+              size="small"
+              color="warning"
+              onClick={() => {
+                if (updateStatus.url) window.api.app.openExternal(updateStatus.url);
+              }}
+              sx={{ height: 22, fontSize: '0.75rem', cursor: 'pointer' }}
+            />
+          )}
           {downloading && (
             <Chip label={`Downloading... ${downloadPercent}%`} size="small" color="info" variant="outlined" sx={{ height: 22, fontSize: '0.75rem' }} />
           )}
@@ -371,6 +382,21 @@ export default function Settings() {
             <Chip label={updateStatus.message} size="small" color="warning" variant="outlined" sx={{ height: 22, fontSize: '0.7rem' }} />
           )}
         </Box>
+        {updateStatus?.status === 'manual-update' && (
+          <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 1, bgcolor: 'warning.lighter', border: '1px solid', borderColor: 'warning.light' }}>
+            <Typography variant="caption" color="warning.dark" fontWeight={600}>
+              v{updateStatus.version} is a source-code release
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, lineHeight: 1.6 }}>
+              No pre-built binary available. To update:<br/>
+              1. cd ~/experimental/ytd<br/>
+              2. git pull origin main<br/>
+              3. npm install<br/>
+              4. npm run build<br/>
+              5. npm start
+            </Typography>
+          </Box>
+        )}
         {downloadedPath && (
           <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
             <Typography variant="caption" color="success.main" fontWeight={500}>
