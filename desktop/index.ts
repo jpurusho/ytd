@@ -164,14 +164,15 @@ function createWindow(): void {
 }
 
 // Register custom protocols before app is ready
-// Keep it minimal - too many privileges trigger security checks
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'local-media',
     privileges: {
-      stream: true,        // Required for video/audio streaming
+      standard: true,       // REQUIRED: Stable origin for range requests (see ADR-0007)
+      stream: true,         // Required for video/audio streaming
       supportFetchAPI: true,
       bypassCSP: true
+      // NOTE: Do NOT add secure:true - causes mixed content blocking with http://localhost dev server
     }
   },
 ]);
