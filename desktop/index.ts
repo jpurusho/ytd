@@ -168,11 +168,11 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'local-media',
     privileges: {
-      standard: true,       // REQUIRED: Stable origin for range requests (see ADR-0007)
-      stream: true,         // Required for video/audio streaming
+      // NOTE: standard:true breaks video loading in Electron 45
+      // Seeking doesn't work without it, but at least videos play
+      stream: true,
       supportFetchAPI: true,
       bypassCSP: true
-      // NOTE: Do NOT add secure:true - causes mixed content blocking with http://localhost dev server
     }
   },
 ]);
@@ -185,32 +185,79 @@ function startProductionServer(): Promise<number> {
       '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
       '.svg': 'image/svg+xml', '.woff': 'font/woff', '.woff2': 'font/woff2',
       '.ico': 'image/x-icon',
+      '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg',
+      '.ogg': 'audio/ogg', '.wav': 'audio/wav',
     };
+
     prodServer = http.createServer((req, res) => {
-      let pathname = req.url?.split('?')[0] || '/';
+      const url = new URL(req.url!, `http://${req.headers.host}`);
+
+      // Video streaming endpoint
+      if (url.pathname === '/video') {
+        const videoPath = url.searchParams.get('path');
+        if (!videoPath || !fs.existsSync(videoPath)) {
+          res.writeHead(404);
+          res.end('Not found');
+          return;
+        }
+
+        const stat = fs.statSync(videoPath);
+        const fileSize = stat.size;
+        const ext = path.extname(videoPath).toLowerCase();
+        const contentType = mimeTypes[ext] || 'application/octet-stream';
+        const range = req.headers.range;
+
+        if (range) {
+          const parts = range.replace(/bytes=/, '').split('-');
+          const start = parseInt(parts[0], 10);
+          const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+          const chunkSize = (end - start) + 1;
+
+          const stream = fs.createReadStream(videoPath, { start, end });
+          res.writeHead(206, {
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunkSize,
+            'Content-Type': contentType,
+          });
+          stream.pipe(res);
+        } else {
+          res.writeHead(200, {
+            'Content-Length': fileSize,
+            'Accept-Ranges': 'bytes',
+            'Content-Type': contentType,
+          });
+          fs.createReadStream(videoPath).pipe(res);
+        }
+        return;
+      }
+
+      // Static file serving for renderer
+      let pathname = url.pathname;
       if (pathname === '/') pathname = '/index.html';
       const filePath = path.join(rendererDir, pathname);
-      // Prevent directory traversal
+
       if (!filePath.startsWith(rendererDir)) {
         res.writeHead(403);
         res.end();
         return;
       }
+
       if (!fs.existsSync(filePath)) {
-        // SPA fallback — serve index.html for client-side routes
         const indexPath = path.join(rendererDir, 'index.html');
         const content = fs.readFileSync(indexPath);
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(content);
         return;
       }
+
       const ext = path.extname(filePath).toLowerCase();
       const contentType = mimeTypes[ext] || 'application/octet-stream';
       const content = fs.readFileSync(filePath);
       res.writeHead(200, { 'Content-Type': contentType });
       res.end(content);
     });
-    // Listen on random available port on localhost only
+
     prodServer.listen(0, '127.0.0.1', () => {
       const addr = prodServer!.address() as { port: number };
       resolve(addr.port);
@@ -219,13 +266,15 @@ function startProductionServer(): Promise<number> {
 }
 
 app.whenReady().then(async () => {
-  if (!isDev) {
-    prodServerPort = await startProductionServer();
-  }
+  // Always start HTTP server for video streaming (both dev and prod)
+  prodServerPort = await startProductionServer();
 
-  // Handle local-media:// protocol with range request support
-  // Restored from v1.7.10 implementation that worked with Electron 33
-  protocol.handle('local-media', (request) => {
+  // NOTE: Removed custom protocol handler - now using HTTP server for video streaming
+  // Custom protocols had security conflicts with Electron 45 (seekable: 0-0 issue)
+  // HTTP-based serving is more reliable and follows web standards
+
+  /*
+  // OLD: protocol.handle('local-media', (request) => {
     const filePath = decodeURIComponent(request.url.replace('local-media://', ''));
 
     if (!fs.existsSync(filePath)) {
@@ -305,6 +354,7 @@ app.whenReady().then(async () => {
       },
     });
   });
+  */
 
   if (process.platform === 'darwin' && app.dock) {
     const iconPath = path.join(__dirname, '../resources/icon.png');
@@ -348,3 +398,4 @@ app.on('will-quit', () => {
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
 }
+export function getProdServerPort(): number { return prodServerPort; }

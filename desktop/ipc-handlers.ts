@@ -602,8 +602,10 @@ export function registerIpcHandlers(): void {
     if (!fs.existsSync(filePath)) {
       return { error: 'File not found. It may have been moved or deleted.' };
     }
-    const encoded = encodeURIComponent(filePath);
-    return { url: `local-media://${encoded}` };
+    // Use HTTP server for video streaming (works in both dev and prod)
+    const { getProdServerPort } = require('./index');
+    const port = getProdServerPort();
+    return { url: `http://localhost:${port}/video?path=${encodeURIComponent(filePath)}` };
   });
 
   ipcMain.handle('app:fileExists', (_event, filePath: string) => {
