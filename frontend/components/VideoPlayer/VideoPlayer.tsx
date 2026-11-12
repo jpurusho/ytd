@@ -8,7 +8,9 @@ import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import type { DownloadRecord, LibraryItem } from '@shared/types';
+import TranscriptButton from '../TranscriptButton/TranscriptButton';
+import TranscriptViewer from '../TranscriptViewer/TranscriptViewer';
+import type { DownloadRecord, LibraryItem, Transcript } from '@shared/types';
 
 interface Props {
   open: boolean;
@@ -47,6 +49,8 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
   const dragging = useRef(false);
   const resizing = useRef<string | null>(null);
   const dragStart = useRef({ mx: 0, my: 0, x: 0, y: 0, w: 0, h: 0 });
+  const [transcript, setTranscript] = useState<Transcript | null>(null);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   const recordFormat = record?.format || 'mp4';
   const isPlayable = record ? canPlayInline(recordFormat) : false;
@@ -287,6 +291,15 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
         <Typography variant="caption" fontWeight={500} noWrap flex={1}>
           {record?.title || 'Player'}
         </Typography>
+        {record?.videoId && (
+          <Box onClick={(e) => e.stopPropagation()}>
+            <TranscriptButton
+              videoId={record.videoId}
+              size="small"
+              onComplete={(t) => { setTranscript(t); setShowTranscript(true); }}
+            />
+          </Box>
+        )}
         <IconButton size="small" onClick={(e) => { e.stopPropagation(); openInSystem(); }} title="System player">
           <OpenInNewIcon sx={{ fontSize: 16 }} />
         </IconButton>
@@ -380,6 +393,23 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
               {muted ? <VolumeOffIcon sx={{ fontSize: 16 }} /> : <VolumeUpIcon sx={{ fontSize: 16 }} />}
             </IconButton>
           </Box>
+
+          {/* Transcript Section */}
+          {transcript && showTranscript && (
+            <Box sx={{ borderTop: '1px solid', borderColor: 'divider', maxHeight: 200, overflow: 'auto', flexShrink: 0 }}>
+              <TranscriptViewer
+                transcript={transcript}
+                currentTime={currentTime}
+                onSeek={(time) => {
+                  if (videoRef.current) {
+                    seekingRef.current = true;
+                    videoRef.current.currentTime = time;
+                    setCurrentTime(time);
+                  }
+                }}
+              />
+            </Box>
+          )}
         </>
       )}
     </Box>
