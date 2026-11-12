@@ -414,8 +414,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sync:start', () => syncManager.start());
   ipcMain.handle('sync:stop', () => syncManager.stop());
   ipcMain.handle('sync:getPeers', () => syncManager.getPeers());
-  ipcMain.handle('sync:getSyncPreview', (_event, peer: { id: string; address: string; port: number }) => syncManager.getSyncPreview(peer));
-  ipcMain.handle('sync:startSync', (_event, peer: { id: string; address: string; port: number }) => syncManager.startSync(peer));
+  ipcMain.handle('sync:getSyncPreview', (_event, peer: any) => syncManager.getSyncPreview(peer));
+  ipcMain.handle('sync:startSync', (_event, peer: any) => syncManager.startSync(peer));
   ipcMain.handle('sync:pauseSync', (_event, sessionId: number) => syncManager.pauseSync(sessionId));
   ipcMain.handle('sync:resumeSync', (_event, sessionId: number) => syncManager.resumeSync(sessionId));
   ipcMain.handle('sync:cancelSync', (_event, sessionId: number) => syncManager.cancelSync(sessionId));

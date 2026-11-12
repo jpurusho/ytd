@@ -592,28 +592,28 @@ export function reorderPlaylistItem(playlistId: number, videoId: string, newPosi
 
 function rowToLocalPlaylist(row: DatabaseRow): LocalPlaylistRow {
   return {
-    id: row.id,
-    name: row.name,
-    description: row.description || '',
-    youtubePlaylistId: row.youtube_playlist_id ?? null,
-    lastSyncedAt: row.last_synced_at ?? null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: Number(row.id),
+    name: String(row.name),
+    description: row.description ? String(row.description) : '',
+    youtubePlaylistId: row.youtube_playlist_id ? String(row.youtube_playlist_id) : null,
+    lastSyncedAt: row.last_synced_at ? String(row.last_synced_at) : null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }
 
 function rowToPlaylistItem(row: DatabaseRow): LocalPlaylistItemRow {
   return {
-    id: row.id,
-    playlistId: row.playlist_id,
-    videoId: row.video_id,
-    title: row.title,
-    channel: row.channel || '',
-    thumbnailUrl: row.thumbnail_url || '',
-    duration: row.duration,
-    publishedAt: row.published_at || '',
-    position: row.position,
-    addedAt: row.added_at,
+    id: Number(row.id),
+    playlistId: Number(row.playlist_id),
+    videoId: String(row.video_id),
+    title: String(row.title),
+    channel: row.channel ? String(row.channel) : '',
+    thumbnailUrl: row.thumbnail_url ? String(row.thumbnail_url) : '',
+    duration: Number(row.duration),
+    publishedAt: row.published_at ? String(row.published_at) : '',
+    position: Number(row.position),
+    addedAt: String(row.added_at),
   };
 }
 
