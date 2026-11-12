@@ -1,4 +1,5 @@
 import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
 import { GoogleAuthService } from './services/google-auth';
@@ -29,20 +30,6 @@ import {
 } from './services/database';
 
 // GitHub release types
-interface GitHubAsset {
-  name: string;
-  browser_download_url: string;
-  size: number;
-}
-
-interface GitHubRelease {
-  tag_name: string;
-  name: string;
-  body: string;
-  html_url: string;
-  assets: GitHubAsset[];
-}
-
 let authService: GoogleAuthService;
 let youtubeService: YouTubeApiService | null = null;
 let queueManager: QueueManager;
@@ -463,136 +450,85 @@ export function registerIpcHandlers(): void {
     return checkToolsInstalled();
   });
 
-  // Persist update cache to disk so it survives app restarts
-  const updateCachePath = path.join(app.getPath('userData'), 'update-cache.json');
-  let lastETag: string | null = null;
-  let cachedRelease: GitHubRelease | null = null;
-  try {
-    const cached = JSON.parse(fs.readFileSync(updateCachePath, 'utf8'));
-    lastETag = cached.etag || null;
-    cachedRelease = cached.release || null;
-  } catch {}
+  // ─── Auto-Update (electron-updater) ────────────────────────────────────────
+  // Uses latest-mac.yml from GitHub releases (no API calls, no rate limits)
 
-  function saveUpdateCache() {
-    try {
-      fs.writeFileSync(updateCachePath, JSON.stringify({ etag: lastETag, release: cachedRelease }));
-    } catch {}
+  // Configure autoUpdater
+  autoUpdater.autoDownload = false; // Manual control over download
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  // Disable auto-update checks on startup in development
+  if (!app.isPackaged) {
+    autoUpdater.forceDevUpdateConfig = false;
   }
 
   ipcMain.handle('app:checkForUpdates', async () => {
     const currentVersion = app.getVersion();
 
     try {
-      const https = require('https');
+      const result = await autoUpdater.checkForUpdates();
 
-      const release: GitHubRelease = await new Promise((resolve, reject) => {
-        const headers: Record<string, string> = { 'User-Agent': 'ytd-updater' };
-        if (lastETag) headers['If-None-Match'] = lastETag;
-
-        https.get({
-          hostname: 'api.github.com',
-          path: '/repos/jpurusho/ytd/releases/latest',
-          headers,
-        }, (res: IncomingMessage) => {
-          let data = '';
-          res.on('data', (chunk: string) => { data += chunk; });
-          res.on('end', () => {
-            if (res.statusCode === 200) {
-              lastETag = res.headers['etag'] || null;
-              cachedRelease = JSON.parse(data);
-              saveUpdateCache();
-              resolve(cachedRelease);
-            } else if (res.statusCode === 304) {
-              resolve(cachedRelease);
-            } else if (res.statusCode === 404) {
-              reject(new Error('No releases found.'));
-            } else if (res.statusCode === 403 || res.statusCode === 429) {
-              if (cachedRelease) resolve(cachedRelease);
-              else reject(new Error('GitHub API rate limit. Try again later.'));
-            } else {
-              reject(new Error(`Update check failed (HTTP ${res.statusCode}).`));
-            }
-          });
-        }).on('error', (err: Error) => {
-          if (cachedRelease) resolve(cachedRelease);
-          else reject(new Error(`Cannot reach GitHub: ${err.message}`));
-        });
-      });
-
-      const latestVersion = release.tag_name?.replace(/^v/, '') || '';
-      const zipAsset = (release.assets || []).find((a: GitHubAsset) => a.name?.endsWith('.zip'));
-      const dmgAsset = (release.assets || []).find((a: GitHubAsset) => a.name?.endsWith('.dmg'));
-      const downloadAsset = dmgAsset || zipAsset;
-
-      if (!latestVersion) return { status: 'error', message: 'Could not determine latest version' };
-
-      const isNewer = latestVersion.localeCompare(currentVersion, undefined, { numeric: true }) > 0;
-      if (isNewer) {
-        // If no downloadable binary, direct user to GitHub for manual update
-        if (!downloadAsset) {
-          return {
-            status: 'manual-update',
-            version: latestVersion,
-            url: release.html_url || '',
-            message: 'New version available. Build from source: git pull && npm install && npm run build'
-          };
-        }
-        return { status: 'available', version: latestVersion, url: downloadAsset.browser_download_url };
+      if (!result) {
+        return { status: 'error', message: 'Unable to check for updates' };
       }
+
+      const latestVersion = result.updateInfo.version;
+      const isNewer = latestVersion.localeCompare(currentVersion, undefined, { numeric: true }) > 0;
+
+      if (isNewer) {
+        // Store update info for downloadUpdate handler
+        (global as any).pendingUpdateInfo = result.updateInfo;
+
+        return {
+          status: 'available',
+          version: latestVersion,
+          // Return a placeholder URL - actual download is handled by electron-updater
+          url: `https://github.com/jpurusho/ytd/releases/download/v${latestVersion}/ytd-${latestVersion}-arm64-mac.zip`
+        };
+      }
+
       return { status: 'up-to-date', version: currentVersion };
     } catch (err: unknown) {
       const error = err as Error;
-      return { status: 'error', message: error.message };
+      // Provide helpful error messages for common issues
+      let message = error.message;
+      if (message.includes('ENOTFOUND') || message.includes('net::')) {
+        message = 'Cannot reach update server. Check your internet connection.';
+      }
+      return { status: 'error', message };
     }
   });
 
-  ipcMain.handle('app:downloadUpdate', async (_event, downloadUrl: string) => {
-    const https = require('https');
-    const os = require('os');
-    const dir = path.join(os.homedir(), 'Downloads');
-    const fileName = downloadUrl.split('/').pop() || 'ytd-update.zip';
-    const destPath = path.join(dir, fileName);
-
-    return new Promise((resolve, reject) => {
-      const follow = (url: string) => {
-        https.get(url, { headers: { 'User-Agent': 'ytd-updater' } }, (res: IncomingMessage) => {
-          if (res.statusCode === 301 || res.statusCode === 302) {
-            return follow(res.headers.location);
+  ipcMain.handle('app:downloadUpdate', async () => {
+    try {
+      // Set up progress reporting
+      autoUpdater.on('download-progress', (progressObj) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send('app:downloadProgress', {
+              downloaded: progressObj.transferred,
+              total: progressObj.total,
+              percent: Math.round(progressObj.percent),
+            });
           }
-          if (res.statusCode !== 200) {
-            return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
-          }
+        }
+      });
 
-          const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
-          let downloaded = 0;
-          const file = fs.createWriteStream(destPath);
+      // Download the update
+      await autoUpdater.downloadUpdate();
 
-          res.on('data', (chunk: Buffer) => {
-            downloaded += chunk.length;
-            for (const win of BrowserWindow.getAllWindows()) {
-              if (!win.isDestroyed()) {
-                win.webContents.send('app:downloadProgress', {
-                  downloaded,
-                  total: totalBytes,
-                  percent: totalBytes ? Math.round((downloaded / totalBytes) * 100) : 0,
-                });
-              }
-            }
-          });
+      // Get download path (electron-updater manages this internally)
+      const updateCachePath = path.join(app.getPath('userData'), 'pending-update');
 
-          res.pipe(file);
-          file.on('finish', () => {
-            file.close();
-            resolve({ success: true, path: destPath, size: downloaded });
-          });
-          file.on('error', (err: Error) => {
-            fs.unlinkSync(destPath);
-            reject(err);
-          });
-        }).on('error', reject);
+      return {
+        success: true,
+        path: updateCachePath,
+        message: 'Update downloaded. Restart the app to install.'
       };
-      follow(downloadUrl);
-    });
+    } catch (err: unknown) {
+      const error = err as Error;
+      throw new Error(`Update download failed: ${error.message}`);
+    }
   });
 
   // ─── Video Playback ───────────────────────────────────────────────────────
