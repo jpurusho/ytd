@@ -602,9 +602,10 @@ export function registerIpcHandlers(): void {
     if (!fs.existsSync(filePath)) {
       return { error: 'File not found. It may have been moved or deleted.' };
     }
-    // Use HTTP server for video streaming (works in both dev and prod)
-    const { getProdServerPort } = require('./index');
-    const port = getProdServerPort();
+    // Use HTTP server for video streaming
+    // Dev: Vite on 5173, Prod: HTTP server on dynamic port
+    const isDev = !require('electron').app.isPackaged;
+    const port = isDev ? '5173' : require('./index').getProdServerPort();
     return { url: `http://localhost:${port}/video?path=${encodeURIComponent(filePath)}` };
   });
 
