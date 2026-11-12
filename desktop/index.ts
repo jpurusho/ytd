@@ -222,20 +222,12 @@ app.whenReady().then(async () => {
     prodServerPort = await startProductionServer();
   }
 
-  // Handle local-media:// protocol with manual range request support for seeking
-  protocol.handle('local-media', async (request) => {
+  // Handle local-media:// protocol with range request support
+  // Restored from v1.7.10 implementation that worked with Electron 33
+  protocol.handle('local-media', (request) => {
     const filePath = decodeURIComponent(request.url.replace('local-media://', ''));
 
-    console.log('[local-media] Request:', {
-      method: request.method,
-      url: request.url,
-      decoded: filePath,
-      range: request.headers.get('range'),
-      allHeaders: Array.from(request.headers.entries())
-    });
-
     if (!fs.existsSync(filePath)) {
-      console.error('[local-media] File not found:', filePath);
       return new Response('Not found', { status: 404 });
     }
 
@@ -243,8 +235,6 @@ app.whenReady().then(async () => {
     const fileSize = stat.size;
     const rangeHeader = request.headers.get('range');
 
-    // Determine MIME type
-    const ext = path.extname(filePath).toLowerCase();
     const mimeTypes: Record<string, string> = {
       '.mp4': 'video/mp4',
       '.webm': 'video/webm',
@@ -252,55 +242,65 @@ app.whenReady().then(async () => {
       '.ogg': 'audio/ogg',
       '.wav': 'audio/wav',
     };
-    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
 
-    // Handle HEAD requests - browser checks if ranges are supported
-    if (request.method === 'HEAD') {
-      console.log('[local-media] HEAD request - advertising range support');
-      return new Response(null, {
-        status: 200,
-        headers: {
-          'Content-Length': String(fileSize),
-          'Accept-Ranges': 'bytes',
-          'Content-Type': mimeType,
+    function createFileStream(filePath: string, opts?: { start?: number; end?: number }): ReadableStream {
+      const fileStream = fs.createReadStream(filePath, opts);
+      let closed = false;
+
+      return new ReadableStream({
+        start(controller) {
+          fileStream.on('data', (chunk) => {
+            if (!closed) {
+              try { controller.enqueue(chunk); } catch { closed = true; }
+            }
+          });
+          fileStream.on('end', () => {
+            if (!closed) {
+              closed = true;
+              try { controller.close(); } catch {}
+            }
+          });
+          fileStream.on('error', () => {
+            if (!closed) {
+              closed = true;
+              try { controller.close(); } catch {}
+            }
+          });
+        },
+        cancel() {
+          closed = true;
+          fileStream.destroy();
         },
       });
     }
 
-    // Handle range requests for seeking
     if (rangeHeader) {
-      const parts = rangeHeader.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      const chunkSize = (end - start) + 1;
+      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
 
-      console.log('[local-media] Range request:', { start, end, chunkSize, fileSize });
-
-      // Read chunk synchronously to avoid stream issues
-      const buffer = Buffer.allocUnsafe(chunkSize);
-      const fd = fs.openSync(filePath, 'r');
-      fs.readSync(fd, buffer, 0, chunkSize, start);
-      fs.closeSync(fd);
-
-      return new Response(buffer, {
-        status: 206,
-        headers: {
-          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-          'Accept-Ranges': 'bytes',
-          'Content-Length': String(chunkSize),
-          'Content-Type': mimeType,
-        },
-      });
+        return new Response(createFileStream(filePath, { start, end }) as any, {
+          status: 206,
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': String(chunkSize),
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+          },
+        });
+      }
     }
 
-    // Full file request
-    const buffer = fs.readFileSync(filePath);
-    return new Response(buffer, {
+    return new Response(createFileStream(filePath) as any, {
       status: 200,
       headers: {
+        'Content-Type': contentType,
         'Content-Length': String(fileSize),
         'Accept-Ranges': 'bytes',
-        'Content-Type': mimeType,
       },
     });
   });
