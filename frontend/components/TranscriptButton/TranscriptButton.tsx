@@ -12,6 +12,9 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
+  Typography,
+  Box,
+  Link,
 } from '@mui/material';
 import SubtitlesIcon from '@mui/icons-material/Subtitles';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -31,9 +34,14 @@ export default function TranscriptButton({ videoId, size = 'medium', onComplete,
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [loading, setLoading] = useState(false);
+  const [availability, setAvailability] = useState<{ whisperLocal: boolean; whisperAPI: boolean }>({
+    whisperLocal: false,
+    whisperAPI: false,
+  });
 
   useEffect(() => {
     loadTranscript();
+    checkAvailability();
 
     // Listen for transcript events
     const unsubProgress = window.api.transcripts.onProgress((data) => {
@@ -66,6 +74,15 @@ export default function TranscriptButton({ videoId, size = 'medium', onComplete,
       unsubError();
     };
   }, [videoId]);
+
+  async function checkAvailability() {
+    try {
+      const avail = await window.api.transcripts.checkAvailability();
+      setAvailability(avail);
+    } catch (error) {
+      console.error('Failed to check transcription availability:', error);
+    }
+  }
 
   async function loadTranscript() {
     try {
@@ -165,31 +182,68 @@ export default function TranscriptButton({ videoId, size = 'medium', onComplete,
         open={Boolean(menuAnchor)}
         onClose={() => setMenuAnchor(null)}
       >
-        <MenuItem onClick={() => handleStart({ method: 'auto', model: 'base' })}>
+        {!availability.whisperLocal && !availability.whisperAPI && (
+          <Box sx={{ px: 2, py: 1.5, maxWidth: 280 }}>
+            <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+              Transcription requires either:
+            </Typography>
+            <Typography variant="caption" display="block" sx={{ fontFamily: 'monospace', mb: 0.5 }}>
+              • pip install openai-whisper
+            </Typography>
+            <Typography variant="caption" display="block">
+              • OpenAI API key in{' '}
+              <Link href="#" onClick={(e) => { e.preventDefault(); /* TODO: open settings */ }}>
+                Settings
+              </Link>
+            </Typography>
+          </Box>
+        )}
+        <MenuItem
+          onClick={() => handleStart({ method: 'auto', model: 'base' })}
+          disabled={!availability.whisperLocal}
+        >
           <ListItemIcon>
             <PlayCircleOutlineIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
             primary="Local (Base)"
-            secondary="Fast, runs on your computer"
+            secondary={
+              availability.whisperLocal
+                ? "Fast, runs on your computer"
+                : "Requires: pip install openai-whisper"
+            }
           />
         </MenuItem>
-        <MenuItem onClick={() => handleStart({ method: 'auto', model: 'small' })}>
+        <MenuItem
+          onClick={() => handleStart({ method: 'auto', model: 'small' })}
+          disabled={!availability.whisperLocal}
+        >
           <ListItemIcon>
             <PlayCircleOutlineIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
             primary="Local (Small)"
-            secondary="Better accuracy, slower"
+            secondary={
+              availability.whisperLocal
+                ? "Better accuracy, slower"
+                : "Requires: pip install openai-whisper"
+            }
           />
         </MenuItem>
-        <MenuItem onClick={() => handleStart({ method: 'whisper-api' })}>
+        <MenuItem
+          onClick={() => handleStart({ method: 'whisper-api' })}
+          disabled={!availability.whisperAPI}
+        >
           <ListItemIcon>
             <CloudIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
             primary="OpenAI Cloud"
-            secondary="Fastest, requires API key"
+            secondary={
+              availability.whisperAPI
+                ? "Fastest, requires API key"
+                : "Requires: Set OPENAI_API_KEY in Settings"
+            }
           />
         </MenuItem>
       </Menu>
