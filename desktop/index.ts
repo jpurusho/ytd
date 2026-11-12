@@ -164,16 +164,14 @@ function createWindow(): void {
 }
 
 // Register custom protocols before app is ready
+// Keep it minimal - too many privileges trigger security checks
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'local-media',
     privileges: {
-      standard: true,      // CRITICAL: Ensures consistent origin for range requests
-      stream: true,
-      bypassCSP: true,
+      stream: true,        // Required for video/audio streaming
       supportFetchAPI: true,
-      corsEnabled: false,  // Allow cross-origin loading from localhost dev server
-      allowServiceWorkers: false
+      bypassCSP: true
     }
   },
 ]);
@@ -278,14 +276,11 @@ app.whenReady().then(async () => {
 
       console.log('[local-media] Range request:', { start, end, chunkSize, fileSize });
 
-      const stream = fs.createReadStream(filePath, { start, end });
-      const chunks: Buffer[] = [];
-
-      for await (const chunk of stream) {
-        chunks.push(chunk);
-      }
-
-      const buffer = Buffer.concat(chunks);
+      // Read chunk synchronously to avoid stream issues
+      const buffer = Buffer.allocUnsafe(chunkSize);
+      const fd = fs.openSync(filePath, 'r');
+      fs.readSync(fd, buffer, 0, chunkSize, start);
+      fs.closeSync(fd);
 
       return new Response(buffer, {
         status: 206,
