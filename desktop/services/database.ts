@@ -667,7 +667,7 @@ function rowToDownloadRecord(row: DatabaseRow): DownloadRecord {
     fileSize: Number(row.file_size),
     duration: Number(row.duration),
     startTime: row.start_time != null ? String(row.start_time) : undefined,
-    endTime: row.end_time != null ? Number(row.end_time) : undefined,
+    endTime: row.end_time != null ? String(row.end_time) : undefined,
     status: String(row.status),
     error: row.error != null ? String(row.error) : undefined,
     downloadedAt: String(row.downloaded_at),
