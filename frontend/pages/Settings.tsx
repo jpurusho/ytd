@@ -194,6 +194,10 @@ export default function Settings() {
               </Select>
             </FormControl>
           )}
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, ml: 4 }}>
+            ⚠️ Requires Full Disk Access permission on macOS.<br />
+            Go to System Settings → Privacy & Security → Full Disk Access → Add ytd.app
+          </Typography>
         </Box>
       </Paper>
 

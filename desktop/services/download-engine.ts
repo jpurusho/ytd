@@ -365,12 +365,12 @@ export class DownloadEngine {
 
     // Browser cookies for authenticated downloads
     // Note: Requires Full Disk Access permission on macOS
+    // Disabled by default - enable in Settings only after granting Full Disk Access
     const useCookies = getSetting('use_browser_cookies');
     const cookieBrowser = getSetting('cookie_browser') || 'safari';
 
-    // Try to use cookies if enabled
-    if (useCookies !== 'false') {
-      // Don't throw error if cookies fail - continue without them
+    // Only use cookies if explicitly enabled (requires Full Disk Access)
+    if (useCookies === 'true') {
       args.push('--cookies-from-browser', cookieBrowser);
       args.push('--compat-options', 'no-youtube-unavailable-videos');
     }
