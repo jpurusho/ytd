@@ -354,16 +354,20 @@ export default function Settings() {
                 try {
                   const result = await window.api.app.downloadUpdate(updateStatus.url);
 
-                  // Check if code signing error requires manual download
-                  if (result.requiresManualDownload && result.downloadUrl) {
+                  if (result.success && result.path) {
+                    setDownloadedPath(result.path);
+                    // Show message with instructions
+                    if (result.message) {
+                      console.log('[Update]', result.message);
+                    }
+                  } else if (result.requiresManualDownload && result.downloadUrl) {
+                    // Legacy fallback: open browser (shouldn't happen anymore)
                     window.api.app.openExternal(result.downloadUrl);
                     setUpdateStatus({
                       status: 'manual-update',
                       version: result.version,
                       url: result.downloadUrl
                     });
-                  } else {
-                    setDownloadedPath(result.path);
                   }
                 } catch (error) {
                   errorService.handleError(error, 'Failed to download update');

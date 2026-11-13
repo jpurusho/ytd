@@ -49,6 +49,67 @@ function getOutputDir(): string {
   return getSetting('output_dir') || path.join(os.homedir(), 'Downloads', 'ytd');
 }
 
+// Helper function to download file with progress (fallback when code signing fails)
+async function downloadFileWithProgress(url: string): Promise<string> {
+  const https = require('https');
+  const os = require('os');
+  const downloadsDir = path.join(os.homedir(), 'Downloads');
+  const fileName = url.split('/').pop() || 'ytd-update.zip';
+  const destPath = path.join(downloadsDir, fileName);
+
+  return new Promise((resolve, reject) => {
+    const follow = (currentUrl: string) => {
+      https.get(currentUrl, { headers: { 'User-Agent': 'ytd-updater' } }, (res: IncomingMessage) => {
+        // Follow redirects
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          if (res.headers.location) {
+            return follow(res.headers.location);
+          }
+        }
+
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+        }
+
+        const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+        let downloaded = 0;
+        const file = fs.createWriteStream(destPath);
+
+        res.on('data', (chunk: Buffer) => {
+          downloaded += chunk.length;
+          // Report progress
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              win.webContents.send('app:downloadProgress', {
+                downloaded,
+                total: totalBytes,
+                percent: totalBytes ? Math.round((downloaded / totalBytes) * 100) : 0,
+              });
+            }
+          }
+        });
+
+        res.pipe(file);
+
+        file.on('finish', () => {
+          file.close();
+          logger.info('[Update] Download complete', { path: destPath });
+          resolve(destPath);
+        });
+
+        file.on('error', (err: Error) => {
+          fs.unlinkSync(destPath);
+          reject(err);
+        });
+      }).on('error', (err: Error) => {
+        reject(err);
+      });
+    };
+
+    follow(url);
+  });
+}
+
 export function registerIpcHandlers(): void {
   authService = new GoogleAuthService();
   queueManager = new QueueManager();
@@ -544,15 +605,22 @@ export function registerIpcHandlers(): void {
                                   error?.code === -1;
 
           if (isCodeSignError) {
-            // Return special response to trigger manual download
+            // Fall back to custom HTTPS download (like we had before v1.8.3)
+            logger.info('[Update] Falling back to custom download (no code signing required)');
             const pendingUpdate = (global as any).pendingUpdateInfo;
             if (pendingUpdate) {
-              resolve({
-                success: false,
-                requiresManualDownload: true,
-                version: pendingUpdate.version,
-                downloadUrl: `https://github.com/jpurusho/ytd/releases/download/v${pendingUpdate.version}/ytd-${pendingUpdate.version}-arm64-mac.zip`,
-                message: 'Automatic update requires code signing. Opening download page...'
+              const downloadUrl = `https://github.com/jpurusho/ytd/releases/download/v${pendingUpdate.version}/ytd-${pendingUpdate.version}-arm64-mac.zip`;
+
+              // Download to ~/Downloads/ using simple HTTPS
+              downloadFileWithProgress(downloadUrl).then((filePath) => {
+                resolve({
+                  success: true,
+                  path: filePath,
+                  version: pendingUpdate.version,
+                  message: `Update downloaded to ${filePath}. Extract and replace /Applications/ytd.app, then run: xattr -rc /Applications/ytd.app`
+                });
+              }).catch((downloadError) => {
+                reject(new Error(`Fallback download failed: ${downloadError.message}`));
               });
               return;
             }

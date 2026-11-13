@@ -195,12 +195,12 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
                   try {
                     const result = await window.api.app.downloadUpdate(updateUrl);
 
-                    // Check if code signing error requires manual download
-                    if (result.requiresManualDownload && result.downloadUrl) {
-                      window.api.app.openExternal(result.downloadUrl);
-                      setUpdateAvailable(''); // Hide update badge since we opened browser
-                    } else {
+                    if (result.success && result.path) {
                       setDownloadedPath(result.path);
+                    } else if (result.requiresManualDownload && result.downloadUrl) {
+                      // Legacy fallback: open browser
+                      window.api.app.openExternal(result.downloadUrl);
+                      setUpdateAvailable('');
                     }
                   } catch (error) {
                     errorService.handleError(error, 'Failed to download update');
