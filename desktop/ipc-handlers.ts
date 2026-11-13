@@ -52,8 +52,8 @@ function getOutputDir(): string {
 // Helper function to download file with progress (fallback when code signing fails)
 async function downloadFileWithProgress(url: string): Promise<string> {
   const https = require('https');
-  const os = require('os');
-  const downloadsDir = path.join(os.homedir(), 'Downloads');
+  // Use Electron's proper Downloads path (handles localization: Descargas, Téléchargements, etc.)
+  const downloadsDir = app.getPath('downloads');
   const fileName = url.split('/').pop() || 'ytd-update.zip';
   const destPath = path.join(downloadsDir, fileName);
 
