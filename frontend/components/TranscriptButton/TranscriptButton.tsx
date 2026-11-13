@@ -168,13 +168,15 @@ export default function TranscriptButton({ videoId, size = 'medium', onComplete,
   return (
     <>
       <Tooltip title={getTooltip()}>
-        <IconButton
-          size={size}
-          onClick={handleClick}
-          disabled={loading || transcript?.status === 'processing'}
-        >
-          {getIcon()}
-        </IconButton>
+        <span>
+          <IconButton
+            size={size}
+            onClick={handleClick}
+            disabled={loading || transcript?.status === 'processing'}
+          >
+            {getIcon()}
+          </IconButton>
+        </span>
       </Tooltip>
 
       <Menu

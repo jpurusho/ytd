@@ -920,11 +920,16 @@ export function updateTranscript(id: number, updates: {
 
     // Update FTS index if transcript_text changed
     if (updates.transcriptText !== undefined && updates.status === 'completed') {
-      db.prepare(`
-        INSERT INTO transcripts_fts(rowid, video_id, transcript_text)
-        VALUES (?, ?, ?)
-        ON CONFLICT(rowid) DO UPDATE SET transcript_text = excluded.transcript_text
-      `).run(id, getTranscriptById(id)?.videoId, updates.transcriptText);
+      const transcript = getTranscriptById(id);
+      if (transcript) {
+        // Delete existing FTS entry (if any) then insert new one
+        // Virtual tables don't support UPSERT, so we use DELETE + INSERT
+        db.prepare('DELETE FROM transcripts_fts WHERE rowid = ?').run(id);
+        db.prepare(`
+          INSERT INTO transcripts_fts(rowid, video_id, transcript_text)
+          VALUES (?, ?, ?)
+        `).run(id, transcript.videoId, updates.transcriptText);
+      }
     }
   }
 }

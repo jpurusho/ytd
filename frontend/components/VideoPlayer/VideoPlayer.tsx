@@ -45,12 +45,16 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const seekingRef = useRef(false); // Use ref instead of state for synchronous updates
   const [position, setPosition] = useState({ x: 16, y: 16 });
-  const [size, setSize] = useState({ w: 420, h: 300 });
+  const [size, setSize] = useState({ w: 560, h: 600 });
   const dragging = useRef(false);
   const resizing = useRef<string | null>(null);
   const dragStart = useRef({ mx: 0, my: 0, x: 0, y: 0, w: 0, h: 0 });
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [transcriptHeight, setTranscriptHeight] = useState(200);
+  const [isDraggingDivider, setIsDraggingDivider] = useState(false);
+  const dividerStartY = useRef(0);
+  const dividerStartHeight = useRef(0);
 
   const recordFormat = record?.format || 'mp4';
   const isPlayable = record ? canPlayInline(recordFormat) : false;
@@ -79,9 +83,25 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
           }
         }
       });
+
+      // Load existing transcript if available
+      const videoId = (record as any).videoId || (record as any).id;
+      if (videoId) {
+        window.api.transcripts.get(videoId).then((existingTranscript) => {
+          if (existingTranscript && existingTranscript.status === 'completed') {
+            console.log('[VideoPlayer] Loaded existing transcript:', videoId, existingTranscript);
+            setTranscript(existingTranscript);
+            setShowTranscript(true);
+          }
+        }).catch((err) => {
+          console.log('[VideoPlayer] No transcript found:', videoId, err);
+        });
+      }
     } else {
       setVideoUrl('');
       setError('');
+      setTranscript(null);
+      setShowTranscript(false);
     }
   }, [open, record]);
 
@@ -186,6 +206,28 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
 
   function showInFinder() {
     if (record?.filePath) window.api.app.showInFinder(record.filePath);
+  }
+
+  function handleDividerDragStart(e: React.MouseEvent) {
+    e.preventDefault();
+    setIsDraggingDivider(true);
+    dividerStartY.current = e.clientY;
+    dividerStartHeight.current = transcriptHeight;
+
+    function onMove(ev: MouseEvent) {
+      const dy = ev.clientY - dividerStartY.current;
+      const newHeight = Math.max(150, Math.min(600, dividerStartHeight.current - dy));
+      setTranscriptHeight(newHeight);
+    }
+
+    function onUp() {
+      setIsDraggingDivider(false);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   }
 
   function handleDragStart(e: React.MouseEvent) {
@@ -395,20 +437,53 @@ export default function VideoPlayer({ open, record, onClose }: Props) {
           </Box>
 
           {/* Transcript Section */}
-          {transcript && showTranscript && (
-            <Box sx={{ borderTop: '1px solid', borderColor: 'divider', maxHeight: 200, overflow: 'auto', flexShrink: 0 }}>
-              <TranscriptViewer
-                transcript={transcript}
-                currentTime={currentTime}
-                onSeek={(time) => {
-                  if (videoRef.current) {
-                    seekingRef.current = true;
-                    videoRef.current.currentTime = time;
-                    setCurrentTime(time);
-                  }
+          {transcript && showTranscript && record?.videoId && (
+            <>
+              {/* Draggable Divider */}
+              <Box
+                onMouseDown={handleDividerDragStart}
+                sx={{
+                  height: 8,
+                  backgroundColor: isDraggingDivider ? 'primary.main' : 'divider',
+                  cursor: 'ns-resize',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: isDraggingDivider ? 'none' : 'background-color 0.2s',
+                  '&:hover': {
+                    backgroundColor: 'primary.main',
+                  },
                 }}
-              />
-            </Box>
+              >
+                <Box
+                  sx={{
+                    width: 40,
+                    height: 3,
+                    backgroundColor: 'background.paper',
+                    borderRadius: 1.5,
+                  }}
+                />
+              </Box>
+
+              {/* Transcript Panel */}
+              <Box sx={{
+                height: transcriptHeight,
+                overflow: 'auto',
+                flexShrink: 0,
+              }}>
+                <TranscriptViewer
+                  videoId={record.videoId}
+                  currentTime={currentTime}
+                  onSeek={(time) => {
+                    if (videoRef.current) {
+                      seekingRef.current = true;
+                      videoRef.current.currentTime = time;
+                      setCurrentTime(time);
+                    }
+                  }}
+                />
+              </Box>
+            </>
           )}
         </>
       )}
