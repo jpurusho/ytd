@@ -7,6 +7,7 @@ import { YouTubeApiService } from './services/youtube-api';
 import { QueueManager } from './services/queue-manager';
 import { getAvailableFormats } from './services/download-engine';
 import { checkToolsInstalled } from './services/tool-paths';
+import { logger } from './services/logger';
 import type { SearchOptions } from '../shared/types';
 import {
   getDataDir, setDataDir, getSetting, setSetting,
@@ -40,6 +41,12 @@ function getYouTubeService(): YouTubeApiService {
     youtubeService = new YouTubeApiService(authService.getOAuth2Client());
   }
   return youtubeService;
+}
+
+// Helper function to get the output directory from settings
+function getOutputDir(): string {
+  const os = require('os');
+  return getSetting('output_dir') || path.join(os.homedir(), 'Downloads', 'ytd');
 }
 
 export function registerIpcHandlers(): void {
@@ -514,17 +521,28 @@ export function registerIpcHandlers(): void {
         }
       });
 
-      // Download the update
-      await autoUpdater.downloadUpdate();
+      // Set up completion handler
+      return new Promise((resolve, reject) => {
+        autoUpdater.once('update-downloaded', (info) => {
+          logger.info('[Update] Downloaded successfully', { version: info.version });
+          resolve({
+            success: true,
+            version: info.version,
+            message: 'Update downloaded. Restart the app to install.'
+          });
+        });
 
-      // Get download path (electron-updater manages this internally)
-      const updateCachePath = path.join(app.getPath('userData'), 'pending-update');
+        autoUpdater.once('error', (error) => {
+          logger.error('[Update] Download failed', { error });
+          reject(new Error(`Update download failed: ${error.message}`));
+        });
 
-      return {
-        success: true,
-        path: updateCachePath,
-        message: 'Update downloaded. Restart the app to install.'
-      };
+        // Start the download
+        autoUpdater.downloadUpdate().catch((error) => {
+          logger.error('[Update] Download initiation failed', { error });
+          reject(error);
+        });
+      });
     } catch (err: unknown) {
       const error = err as Error;
       throw new Error(`Update download failed: ${error.message}`);
@@ -535,6 +553,11 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('app:getVideoFileUrl', (_event, filePath: string) => {
     const fs = require('fs');
+    // If filePath is relative (just filename), construct absolute path
+    if (!path.isAbsolute(filePath)) {
+      const outputDir = getOutputDir();
+      filePath = path.join(outputDir, filePath);
+    }
     if (!fs.existsSync(filePath)) {
       return { error: 'File not found. It may have been moved or deleted.' };
     }
@@ -547,14 +570,29 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('app:fileExists', (_event, filePath: string) => {
     const fs = require('fs');
+    // If filePath is relative (just filename), construct absolute path
+    if (!path.isAbsolute(filePath)) {
+      const outputDir = getOutputDir();
+      filePath = path.join(outputDir, filePath);
+    }
     return fs.existsSync(filePath);
   });
 
   ipcMain.handle('app:openInSystemPlayer', (_event, filePath: string) => {
+    // If filePath is relative (just filename), construct absolute path
+    if (!path.isAbsolute(filePath)) {
+      const outputDir = getOutputDir();
+      filePath = path.join(outputDir, filePath);
+    }
     shell.openPath(filePath);
   });
 
   ipcMain.handle('app:showInFinder', (_event, filePath: string) => {
+    // If filePath is relative (just filename), construct absolute path
+    if (!path.isAbsolute(filePath)) {
+      const outputDir = getOutputDir();
+      filePath = path.join(outputDir, filePath);
+    }
     shell.showItemInFolder(filePath);
   });
 
