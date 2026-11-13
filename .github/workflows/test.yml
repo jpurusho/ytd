@@ -1,8 +1,8 @@
 name: Test
 
 on:
-  push:
-    branches: [main]
+  # Only run on PRs, not on main pushes
+  # (main pushes trigger build.yml via tags which already runs tests)
   pull_request:
     branches: [main]
   workflow_dispatch:
