@@ -357,13 +357,23 @@ export class DownloadEngine {
       args.push('--js-runtimes', `quickjs:${qjsPath}`);
     }
 
-    // Browser cookies for authenticated downloads (disabled - Chrome path issues)
-    // Uncomment and configure in Settings if needed
-    // const useCookies = getSetting('use_browser_cookies');
-    // const cookieBrowser = getSetting('cookie_browser') || 'chrome';
-    // if (useCookies === 'true') {
-    //   args.push('--cookies-from-browser', cookieBrowser);
-    // }
+    // Anti-bot measures: User-Agent + referer
+    // Mimic a real browser to avoid YouTube 403 errors
+    args.push('--user-agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    args.push('--add-header', 'Referer:https://www.youtube.com');
+    args.push('--add-header', 'Accept-Language:en-US,en;q=0.9');
+
+    // Browser cookies for authenticated downloads
+    // Note: Requires Full Disk Access permission on macOS
+    const useCookies = getSetting('use_browser_cookies');
+    const cookieBrowser = getSetting('cookie_browser') || 'safari';
+
+    // Try to use cookies if enabled
+    if (useCookies !== 'false') {
+      // Don't throw error if cookies fail - continue without them
+      args.push('--cookies-from-browser', cookieBrowser);
+      args.push('--compat-options', 'no-youtube-unavailable-videos');
+    }
 
     args.push(item.url);
     return args;
