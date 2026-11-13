@@ -469,6 +469,9 @@ export function registerIpcHandlers(): void {
     autoUpdater.forceDevUpdateConfig = false;
   }
 
+  // WORKAROUND: Since app is not code-signed, electron-updater will fail with
+  // SQRLCodeSignatureErrorDomain. We'll catch this and fall back to manual download.
+
   ipcMain.handle('app:checkForUpdates', async () => {
     const currentVersion = app.getVersion();
 
@@ -532,8 +535,29 @@ export function registerIpcHandlers(): void {
           });
         });
 
-        autoUpdater.once('error', (error) => {
+        autoUpdater.once('error', (error: any) => {
           logger.error('[Update] Download failed', { error });
+
+          // Check if this is a code signature error (app not signed)
+          const isCodeSignError = error?.message?.includes('SQRLCodeSignatureErrorDomain') ||
+                                  error?.message?.includes('code signature') ||
+                                  error?.code === -1;
+
+          if (isCodeSignError) {
+            // Return special response to trigger manual download
+            const pendingUpdate = (global as any).pendingUpdateInfo;
+            if (pendingUpdate) {
+              resolve({
+                success: false,
+                requiresManualDownload: true,
+                version: pendingUpdate.version,
+                downloadUrl: `https://github.com/jpurusho/ytd/releases/download/v${pendingUpdate.version}/ytd-${pendingUpdate.version}-arm64-mac.zip`,
+                message: 'Automatic update requires code signing. Opening download page...'
+              });
+              return;
+            }
+          }
+
           reject(new Error(`Update download failed: ${error.message}`));
         });
 

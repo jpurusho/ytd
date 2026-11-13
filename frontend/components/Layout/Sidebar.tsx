@@ -194,7 +194,14 @@ export default function Sidebar({ currentPage, onPageChange, user, onLogout, que
                   const unsub = window.api.app.onDownloadProgress((data) => setDownloadPercent(data.percent));
                   try {
                     const result = await window.api.app.downloadUpdate(updateUrl);
-                    setDownloadedPath(result.path);
+
+                    // Check if code signing error requires manual download
+                    if (result.requiresManualDownload && result.downloadUrl) {
+                      window.api.app.openExternal(result.downloadUrl);
+                      setUpdateAvailable(''); // Hide update badge since we opened browser
+                    } else {
+                      setDownloadedPath(result.path);
+                    }
                   } catch (error) {
                     errorService.handleError(error, 'Failed to download update');
                   } finally {

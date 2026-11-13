@@ -353,7 +353,18 @@ export default function Settings() {
                 const unsub = window.api.app.onDownloadProgress((data) => setDownloadPercent(data.percent));
                 try {
                   const result = await window.api.app.downloadUpdate(updateStatus.url);
-                  setDownloadedPath(result.path);
+
+                  // Check if code signing error requires manual download
+                  if (result.requiresManualDownload && result.downloadUrl) {
+                    window.api.app.openExternal(result.downloadUrl);
+                    setUpdateStatus({
+                      status: 'manual-update',
+                      version: result.version,
+                      url: result.downloadUrl
+                    });
+                  } else {
+                    setDownloadedPath(result.path);
+                  }
                 } catch (error) {
                   errorService.handleError(error, 'Failed to download update');
                 } finally {
