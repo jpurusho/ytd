@@ -16,6 +16,8 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DownloadIcon from '@mui/icons-material/Download';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PlayCircleIcon from '@mui/icons-material/PlayCircle';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import GridViewIcon from '@mui/icons-material/GridView';
 import YouTubePreview from '../components/YouTubePreview/YouTubePreview';
 import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
 import type { LocalPlaylist, LocalPlaylistItem, PlaylistInfo, DownloadRequest, VideoInfo, DownloadRecord } from '@shared/types';
@@ -44,6 +46,7 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [draggedItem, setDraggedItem] = useState<LocalPlaylistItem | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   useEffect(() => {
     loadPlaylists();
@@ -341,11 +344,37 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
           <Typography variant="subtitle2" color="text.secondary">
             {playlistItems.length} videos
           </Typography>
-          {selectedItems.size > 0 && (
-            <Button size="small" color="error" variant="outlined" startIcon={<RemoveCircleOutlineIcon />} onClick={handleBulkRemove}>
-              Remove {selectedItems.size} from playlist
-            </Button>
-          )}
+          <Box display="flex" gap={1} alignItems="center">
+            {selectedItems.size > 0 && (
+              <Button size="small" color="error" variant="outlined" startIcon={<RemoveCircleOutlineIcon />} onClick={handleBulkRemove}>
+                Remove {selectedItems.size} from playlist
+              </Button>
+            )}
+            <Box display="flex" gap={0.5} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 0.25 }}>
+              <IconButton
+                size="small"
+                onClick={() => setViewMode('list')}
+                sx={{
+                  bgcolor: viewMode === 'list' ? 'action.selected' : 'transparent',
+                  '&:hover': { bgcolor: viewMode === 'list' ? 'action.selected' : 'action.hover' },
+                }}
+                title="List view"
+              >
+                <ViewListIcon fontSize="small" />
+              </IconButton>
+              <IconButton
+                size="small"
+                onClick={() => setViewMode('grid')}
+                sx={{
+                  bgcolor: viewMode === 'grid' ? 'action.selected' : 'transparent',
+                  '&:hover': { bgcolor: viewMode === 'grid' ? 'action.selected' : 'action.hover' },
+                }}
+                title="Grid view"
+              >
+                <GridViewIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </Box>
         </Box>
 
         {playlistItems.length === 0 ? (
@@ -354,7 +383,7 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
               No videos yet. Add videos from Search or Browse.
             </Typography>
           </Box>
-        ) : (
+        ) : viewMode === 'list' ? (
           <List disablePadding>
             {playlistItems.map((item, index) => (
               <ListItem
@@ -450,6 +479,113 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
               </ListItem>
             ))}
           </List>
+        ) : (
+          <Grid container spacing={2}>
+            {playlistItems.map((item) => (
+              <Grid item key={item.videoId} xs={12} sm={6} md={4} lg={3}>
+                <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+                  <Box sx={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}>
+                    <Checkbox
+                      size="small"
+                      checked={selectedItems.has(item.videoId)}
+                      onChange={() => {
+                        const next = new Set(selectedItems);
+                        if (next.has(item.videoId)) next.delete(item.videoId);
+                        else next.add(item.videoId);
+                        setSelectedItems(next);
+                      }}
+                      sx={{
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        borderRadius: 0.5,
+                        '&:hover': { bgcolor: 'rgba(255, 255, 255, 1)' },
+                      }}
+                    />
+                  </Box>
+                  <Box
+                    sx={{
+                      position: 'relative',
+                      paddingTop: '56.25%',
+                      cursor: 'pointer',
+                      '&:hover .play-overlay': { opacity: 1 },
+                    }}
+                    onClick={() => handlePlayItem(item)}
+                  >
+                    <img
+                      src={item.thumbnailUrl}
+                      alt={item.title}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                      }}
+                    />
+                    <Box
+                      className="play-overlay"
+                      sx={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        bgcolor: 'rgba(0,0,0,0.5)',
+                        opacity: 0,
+                        transition: 'opacity 0.2s',
+                      }}
+                    >
+                      <PlayCircleIcon sx={{ color: '#fff', fontSize: 56 }} />
+                    </Box>
+                    {item.duration && (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          bottom: 8,
+                          right: 8,
+                          bgcolor: 'rgba(0, 0, 0, 0.8)',
+                          color: 'white',
+                          px: 0.5,
+                          py: 0.25,
+                          borderRadius: 0.5,
+                          fontSize: '0.75rem',
+                        }}
+                      >
+                        {formatDuration(item.duration)}
+                      </Box>
+                    )}
+                  </Box>
+                  <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                    <Typography variant="body2" fontWeight={500} sx={{ mb: 0.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {item.title}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
+                      {item.channel}
+                    </Typography>
+                    {localFiles[item.videoId] && (
+                      <Chip label="Downloaded" size="small" color="success" variant="outlined" sx={{ alignSelf: 'flex-start', mb: 1, height: 20, fontSize: '0.65rem' }} />
+                    )}
+                    <Box sx={{ mt: 'auto', display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+                      {localFiles[item.videoId] && (
+                        <IconButton size="small" onClick={() => setPlayingLocal(localFiles[item.videoId])} title="Play local file" color="success">
+                          <PlayCircleIcon fontSize="small" />
+                        </IconButton>
+                      )}
+                      <IconButton size="small" onClick={() => handlePlayItem(item)} title="Preview on YouTube">
+                        <PlayArrowIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" onClick={() => handleDownloadItem(item)} title="Download">
+                        <DownloadIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" onClick={() => handleRemoveItem(item.videoId)} title="Remove" color="error">
+                        <RemoveCircleOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
         )}
 
         <YouTubePreview
