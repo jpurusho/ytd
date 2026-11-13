@@ -18,3 +18,4 @@ scripts/token_cost.py
 *.webm
 *.mp4
 *.mp3
+*.part
