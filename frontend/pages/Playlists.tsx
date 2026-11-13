@@ -4,6 +4,7 @@ import {
   TextField, Dialog, DialogTitle, DialogContent, DialogActions,
   Chip, Alert, CircularProgress, List, ListItem, ListItemText,
   ListItemAvatar, Avatar, ListItemSecondaryAction, Checkbox,
+  Select, MenuItem, FormControl, InputLabel,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -48,6 +49,8 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
   const [draggedItem, setDraggedItem] = useState<LocalPlaylistItem | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'recently-added' | 'title'>('newest');
+  const [dateFilter, setDateFilter] = useState<'all' | 'week' | 'month' | 'year' | 'older'>('all');
 
   useEffect(() => {
     loadPlaylists();
@@ -270,6 +273,73 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
     return `${m}:${String(s).padStart(2, '0')}`;
   }
 
+  function getVideoAge(publishedAt: string | undefined): string {
+    if (!publishedAt) return 'Unknown';
+    const published = new Date(publishedAt);
+    const now = new Date();
+    const diffMs = now.getTime() - published.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+    return `${Math.floor(diffDays / 365)}y ago`;
+  }
+
+  // Filter and sort playlist items
+  const filteredAndSortedItems = React.useMemo(() => {
+    let items = [...playlistItems];
+
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      const cutoff = new Date();
+
+      switch (dateFilter) {
+        case 'week':
+          cutoff.setDate(now.getDate() - 7);
+          items = items.filter(item => item.publishedAt && new Date(item.publishedAt) >= cutoff);
+          break;
+        case 'month':
+          cutoff.setMonth(now.getMonth() - 1);
+          items = items.filter(item => item.publishedAt && new Date(item.publishedAt) >= cutoff);
+          break;
+        case 'year':
+          cutoff.setFullYear(now.getFullYear() - 1);
+          items = items.filter(item => item.publishedAt && new Date(item.publishedAt) >= cutoff);
+          break;
+        case 'older':
+          cutoff.setFullYear(now.getFullYear() - 1);
+          items = items.filter(item => item.publishedAt && new Date(item.publishedAt) < cutoff);
+          break;
+      }
+    }
+
+    // Apply sorting
+    items.sort((a, b) => {
+      switch (sortBy) {
+        case 'newest':
+          if (!a.publishedAt) return 1;
+          if (!b.publishedAt) return -1;
+          return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+        case 'oldest':
+          if (!a.publishedAt) return 1;
+          if (!b.publishedAt) return -1;
+          return new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime();
+        case 'recently-added':
+          if (!a.addedAt) return 1;
+          if (!b.addedAt) return -1;
+          return new Date(b.addedAt + 'Z').getTime() - new Date(a.addedAt + 'Z').getTime();
+        case 'title':
+          return a.title.localeCompare(b.title);
+        default:
+          return 0;
+      }
+    });
+
+    return items;
+  }, [playlistItems, dateFilter, sortBy]);
+
   function handleDragStart(e: React.DragEvent, item: LocalPlaylistItem, index: number) {
     setDraggedItem(item);
     e.dataTransfer.effectAllowed = 'move';
@@ -364,9 +434,9 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
           </Alert>
         )}
 
-        <Box display="flex" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+        <Box display="flex" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="subtitle2" color="text.secondary">
-            {playlistItems.length} videos
+            {filteredAndSortedItems.length} of {playlistItems.length} videos
           </Typography>
           <Box display="flex" gap={1} alignItems="center">
             {selectedItems.size > 0 && (
@@ -374,6 +444,39 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
                 Remove {selectedItems.size} from playlist
               </Button>
             )}
+
+            {/* Date Filter */}
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <InputLabel>Age</InputLabel>
+              <Select
+                value={dateFilter}
+                label="Age"
+                onChange={(e) => setDateFilter(e.target.value as any)}
+              >
+                <MenuItem value="all">All dates</MenuItem>
+                <MenuItem value="week">Last week</MenuItem>
+                <MenuItem value="month">Last month</MenuItem>
+                <MenuItem value="year">Last year</MenuItem>
+                <MenuItem value="older">&gt;1 year old</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Sort Dropdown */}
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>Sort by</InputLabel>
+              <Select
+                value={sortBy}
+                label="Sort by"
+                onChange={(e) => setSortBy(e.target.value as any)}
+              >
+                <MenuItem value="newest">Newest first</MenuItem>
+                <MenuItem value="oldest">Oldest first</MenuItem>
+                <MenuItem value="recently-added">Recently added</MenuItem>
+                <MenuItem value="title">Title A-Z</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* View Toggle */}
             <Box display="flex" gap={0.5} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 0.25 }}>
               <IconButton
                 size="small"
@@ -409,7 +512,7 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
           </Box>
         ) : viewMode === 'list' ? (
           <List disablePadding>
-            {playlistItems.map((item, index) => (
+            {filteredAndSortedItems.map((item, index) => (
               <ListItem
                 key={item.videoId}
                 draggable
@@ -461,18 +564,22 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
                   secondary={
                     <Box component="span" display="flex" gap={1} alignItems="center" flexWrap="wrap">
                       <span>{item.channel}{item.duration ? ` · ${formatDuration(item.duration)}` : ''}</span>
-                      {localFiles[item.videoId] && (
-                        <Chip label="Downloaded" size="small" color="success" variant="outlined" sx={{ height: 16, fontSize: '0.6rem', '& .MuiChip-label': { px: 0.5 } }} />
-                      )}
-                      {localFiles[item.videoId]?.downloadedAt && (
-                        <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>
-                          DL: {new Date(localFiles[item.videoId].downloadedAt + 'Z').toLocaleDateString()}
-                        </span>
-                      )}
                       {item.publishedAt && (
-                        <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>
-                          Published: {new Date(item.publishedAt).toLocaleDateString()}
-                        </span>
+                        <Chip
+                          label={getVideoAge(item.publishedAt)}
+                          size="small"
+                          variant="outlined"
+                          sx={{
+                            height: 18,
+                            fontSize: '0.65rem',
+                            fontWeight: 500,
+                            borderColor: new Date().getTime() - new Date(item.publishedAt).getTime() > 365 * 24 * 60 * 60 * 1000 ? 'warning.main' : 'divider',
+                            color: new Date().getTime() - new Date(item.publishedAt).getTime() > 365 * 24 * 60 * 60 * 1000 ? 'warning.main' : 'text.secondary',
+                          }}
+                        />
+                      )}
+                      {localFiles[item.videoId] && (
+                        <Chip label="Downloaded" size="small" color="success" variant="outlined" sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.5 } }} />
                       )}
                       {item.addedAt && (
                         <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>
@@ -505,7 +612,7 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
           </List>
         ) : (
           <Grid container spacing={2}>
-            {playlistItems.map((item) => (
+            {filteredAndSortedItems.map((item) => (
               <Grid item key={item.videoId} xs={12} sm={6} md={4} lg={3}>
                 <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
                   <Box sx={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}>
@@ -586,9 +693,25 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
                     <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
                       {item.channel}
                     </Typography>
-                    {localFiles[item.videoId] && (
-                      <Chip label="Downloaded" size="small" color="success" variant="outlined" sx={{ alignSelf: 'flex-start', mb: 1, height: 20, fontSize: '0.65rem' }} />
-                    )}
+                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
+                      {item.publishedAt && (
+                        <Chip
+                          label={getVideoAge(item.publishedAt)}
+                          size="small"
+                          variant="outlined"
+                          sx={{
+                            height: 20,
+                            fontSize: '0.65rem',
+                            fontWeight: 500,
+                            borderColor: new Date().getTime() - new Date(item.publishedAt).getTime() > 365 * 24 * 60 * 60 * 1000 ? 'warning.main' : 'divider',
+                            color: new Date().getTime() - new Date(item.publishedAt).getTime() > 365 * 24 * 60 * 60 * 1000 ? 'warning.main' : 'text.secondary',
+                          }}
+                        />
+                      )}
+                      {localFiles[item.videoId] && (
+                        <Chip label="Downloaded" size="small" color="success" variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />
+                      )}
+                    </Box>
                     <Box sx={{ mt: 'auto', display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
                       {localFiles[item.videoId] && (
                         <IconButton size="small" onClick={() => setPlayingLocal(localFiles[item.videoId])} title="Play local file" color="success">
