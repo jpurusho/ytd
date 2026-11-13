@@ -111,6 +111,7 @@ const api: ElectronAPI = {
     reorderItem: (playlistId: number, videoId: string, newPosition: number) => ipcRenderer.invoke('playlists:reorderItem', playlistId, videoId, newPosition),
     syncToYouTube: (playlistId: number) => ipcRenderer.invoke('playlists:syncToYouTube', playlistId),
     pullFromYouTube: (youtubePlaylistId: string, localPlaylistId?: number) => ipcRenderer.invoke('playlists:pullFromYouTube', youtubePlaylistId, localPlaylistId),
+    tryImportWatchLater: () => ipcRenderer.invoke('playlists:tryImportWatchLater'),
   },
   sync: {
     start: () => ipcRenderer.invoke('sync:start'),

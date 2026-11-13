@@ -18,6 +18,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PlayCircleIcon from '@mui/icons-material/PlayCircle';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import GridViewIcon from '@mui/icons-material/GridView';
+import WatchLaterIcon from '@mui/icons-material/WatchLater';
 import YouTubePreview from '../components/YouTubePreview/YouTubePreview';
 import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
 import type { LocalPlaylist, LocalPlaylistItem, PlaylistInfo, DownloadRequest, VideoInfo, DownloadRecord } from '@shared/types';
@@ -179,6 +180,29 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
     } finally {
       setSyncing(false);
       setTimeout(() => setSyncMessage(''), 4000);
+    }
+  }
+
+  async function handleTryImportWatchLater() {
+    setSyncing(true);
+    setSyncMessage('');
+    try {
+      const result = await window.api.playlists.tryImportWatchLater();
+      setSyncMessage(`Watch Later imported! Found ${result.count} videos.`);
+      loadPlaylists();
+      // Auto-open the imported playlist
+      if (result.playlistId) {
+        const pl = await window.api.playlists.get(result.playlistId);
+        if (pl) {
+          setTimeout(() => openPlaylist(pl), 500);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to import Watch Later:', err);
+      setSyncMessage(`Watch Later import failed: ${err.message}`);
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMessage(''), 8000);
     }
   }
 
@@ -631,6 +655,16 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
         <Box display="flex" gap={1}>
           <Button size="small" variant="outlined" startIcon={<CloudDownloadIcon />} onClick={handleImportFromYouTube}>
             Import from YouTube
+          </Button>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={syncing ? <CircularProgress size={16} /> : <WatchLaterIcon />}
+            onClick={handleTryImportWatchLater}
+            disabled={syncing}
+            title="Try to import Watch Later playlist (may not work due to API limitations)"
+          >
+            Try Watch Later
           </Button>
           <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)}>
             New Playlist

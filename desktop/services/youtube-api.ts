@@ -372,6 +372,27 @@ export class YouTubeApiService {
   async deletePlaylist(playlistId: string): Promise<void> {
     await this.youtube.playlists.delete({ id: playlistId });
   }
+
+  async tryImportWatchLater(): Promise<PlaylistItem[]> {
+    console.log('[tryImportWatchLater] Attempting to access Watch Later playlist (WL)...');
+    try {
+      // Try to access Watch Later directly
+      // This may work for some accounts despite API docs saying it shouldn't
+      const items = await this.getPlaylistItems('WL', 200);
+      console.log(`[tryImportWatchLater] Success! Found ${items.length} videos in Watch Later`);
+      return items;
+    } catch (err: any) {
+      console.error('[tryImportWatchLater] Failed to access Watch Later:', err.message);
+      // Re-throw with user-friendly message
+      if (err.message?.includes('forbidden') || err.message?.includes('403')) {
+        throw new Error('Watch Later is not accessible via YouTube API. Create a regular playlist copy on YouTube instead.');
+      } else if (err.message?.includes('not found') || err.message?.includes('404')) {
+        throw new Error('Watch Later playlist not found. Make sure you have videos in Watch Later.');
+      } else {
+        throw new Error(`Failed to access Watch Later: ${err.message}`);
+      }
+    }
+  }
 }
 
 function parseDuration(iso8601: string): number {

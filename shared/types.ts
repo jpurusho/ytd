@@ -317,6 +317,7 @@ export interface ElectronAPI {
     reorderItem: (playlistId: number, videoId: string, newPosition: number) => Promise<void>;
     syncToYouTube: (playlistId: number) => Promise<{ success: boolean; youtubePlaylistId: string }>;
     pullFromYouTube: (youtubePlaylistId: string, localPlaylistId?: number) => Promise<LocalPlaylist | null>;
+    tryImportWatchLater: () => Promise<{ success: boolean; count: number; playlistId: number }>;
   };
   sync: {
     start: () => Promise<void>;

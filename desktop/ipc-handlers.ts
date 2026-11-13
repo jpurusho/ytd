@@ -853,6 +853,48 @@ export function registerIpcHandlers(): void {
     updateLocalPlaylist(targetId, { lastSyncedAt: new Date().toISOString() });
     return getLocalPlaylist(targetId);
   });
+
+  ipcMain.handle('playlists:tryImportWatchLater', async () => {
+    const ytService = getYouTubeService();
+
+    console.log('[tryImportWatchLater] Attempting to import Watch Later...');
+    const items = await ytService.tryImportWatchLater();
+
+    console.log(`[tryImportWatchLater] Successfully fetched ${items.length} videos from Watch Later`);
+
+    // Check if Watch Later playlist already exists locally
+    const allPlaylists = getLocalPlaylists();
+    const existing = allPlaylists.find(pl =>
+      pl.name === 'Watch Later' || pl.youtubePlaylistId === 'WL'
+    );
+
+    let targetId: number;
+    if (existing) {
+      console.log(`[tryImportWatchLater] Deleting existing Watch Later playlist (id=${existing.id})`);
+      deleteLocalPlaylist(existing.id);
+    }
+
+    console.log('[tryImportWatchLater] Creating new Watch Later playlist');
+    const created = createLocalPlaylist('Watch Later', 'Your YouTube Watch Later videos');
+    targetId = created.id;
+    updateLocalPlaylist(targetId, { youtubePlaylistId: 'WL' });
+
+    // Add all items
+    for (const item of items) {
+      addPlaylistItem(targetId, {
+        videoId: item.videoId,
+        title: item.title,
+        channel: item.channel,
+        thumbnailUrl: item.thumbnail,
+        duration: item.duration,
+      });
+    }
+
+    updateLocalPlaylist(targetId, { lastSyncedAt: new Date().toISOString() });
+    console.log(`[tryImportWatchLater] Successfully imported ${items.length} videos to local playlist`);
+
+    return { success: true, count: items.length, playlistId: targetId };
+  });
 }
 
 // Helper functions for transcript export formats
