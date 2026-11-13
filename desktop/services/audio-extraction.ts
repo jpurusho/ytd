@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { logger } from './logger';
+import { getFfmpegPath } from './tool-paths';
 
 export interface AudioExtractionOptions {
   videoPath: string;
@@ -76,9 +77,10 @@ export class AudioExtractionService {
         finalOutputPath
       ];
 
-      logger.debug(`[AudioExtraction] ffmpeg command: ffmpeg ${args.join(' ')}`);
+      const ffmpegPath = getFfmpegPath();
+      logger.debug(`[AudioExtraction] ffmpeg command: ${ffmpegPath} ${args.join(' ')}`);
 
-      const ffmpeg = spawn('ffmpeg', args);
+      const ffmpeg = spawn(ffmpegPath, args);
       this.activeExtractions.set(videoId, ffmpeg);
 
       let stderrData = '';
@@ -196,7 +198,8 @@ export class AudioExtractionService {
    */
   async checkFfmpegAvailable(): Promise<boolean> {
     return new Promise((resolve) => {
-      const ffmpeg = spawn('ffmpeg', ['-version']);
+      const ffmpegPath = getFfmpegPath();
+      const ffmpeg = spawn(ffmpegPath, ['-version']);
       ffmpeg.on('close', (code: number) => {
         resolve(code === 0);
       });
