@@ -48,7 +48,7 @@ export class WhisperTranscriptionService {
   }
 
   /**
-   * Transcribe using local Python Whisper
+   * Transcribe using local Whisper (CLI or Python module)
    */
   private async transcribeWithLocal(
     videoId: string,
@@ -62,34 +62,57 @@ export class WhisperTranscriptionService {
       throw new Error(`Audio file not found: ${audioPath}`);
     }
 
+    // Check if whisper CLI is available (brew install)
+    const useWhisperCLI = await new Promise<boolean>((resolve) => {
+      const check = spawn('which', ['whisper']);
+      check.on('close', (code: number) => resolve(code === 0));
+      check.on('error', () => resolve(false));
+    });
+
     return new Promise((resolve, reject) => {
-      // Build whisper command
-      const args = [
-        '-m', 'whisper',
-        audioPath,
-        '--model', model,
-        '--output_format', 'json',
-        '--output_dir', '/tmp',
-        '--fp16', 'False', // Use FP32 for CPU compatibility
-      ];
+      let command: string;
+      let args: string[];
+
+      if (useWhisperCLI) {
+        // Use whisper CLI directly (brew install)
+        command = 'whisper';
+        args = [
+          audioPath,
+          '--model', model,
+          '--output_format', 'json',
+          '--output_dir', '/tmp',
+          '--fp16', 'False', // Use FP32 for CPU compatibility
+        ];
+        logger.debug(`[Whisper] Using CLI (brew): whisper ${args.join(' ')}`);
+      } else {
+        // Use Python module (pip install)
+        command = 'python3';
+        args = [
+          '-m', 'whisper',
+          audioPath,
+          '--model', model,
+          '--output_format', 'json',
+          '--output_dir', '/tmp',
+          '--fp16', 'False',
+        ];
+        logger.debug(`[Whisper] Using Python module (pip): python3 ${args.join(' ')}`);
+      }
 
       if (language) {
         args.push('--language', language);
       }
 
-      logger.debug(`[Whisper] Python command: python3 ${args.join(' ')}`);
-
-      const python = spawn('python3', args);
-      this.activeTranscriptions.set(videoId, python);
+      const whisperProcess = spawn(command, args);
+      this.activeTranscriptions.set(videoId, whisperProcess);
 
       let stdoutData = '';
       let stderrData = '';
 
-      python.stdout.on('data', (data: Buffer) => {
+      whisperProcess.stdout.on('data', (data: Buffer) => {
         stdoutData += data.toString();
       });
 
-      python.stderr.on('data', (data: Buffer) => {
+      whisperProcess.stderr.on('data', (data: Buffer) => {
         const text = data.toString();
         stderrData += text;
 
@@ -107,7 +130,7 @@ export class WhisperTranscriptionService {
         }
       });
 
-      python.on('close', (code: number) => {
+      whisperProcess.on('close', (code: number) => {
         this.activeTranscriptions.delete(videoId);
 
         if (code === 0) {
@@ -160,10 +183,10 @@ export class WhisperTranscriptionService {
         }
       });
 
-      python.on('error', (error: Error) => {
+      whisperProcess.on('error', (error: Error) => {
         this.activeTranscriptions.delete(videoId);
-        logger.error(`[Whisper] Error spawning Python for ${videoId}`, { error });
-        reject(new Error(`Failed to start Python/Whisper: ${error.message}`));
+        logger.error(`[Whisper] Error spawning Whisper for ${videoId}`, { error });
+        reject(new Error(`Failed to start Whisper: ${error.message}`));
       });
     });
   }
@@ -268,6 +291,19 @@ export class WhisperTranscriptionService {
    * Check if Python and Whisper are available
    */
   async checkLocalWhisperAvailable(): Promise<boolean> {
+    // First check if whisper CLI is available (brew install)
+    const cliAvailable = await new Promise<boolean>((resolve) => {
+      const whisperCmd = spawn('which', ['whisper']);
+      whisperCmd.on('close', (code: number) => resolve(code === 0));
+      whisperCmd.on('error', () => resolve(false));
+    });
+
+    if (cliAvailable) {
+      logger.debug('[Whisper] Found whisper CLI (brew install)');
+      return true;
+    }
+
+    // Fall back to Python module check (pip install)
     return new Promise((resolve) => {
       const python = spawn('python3', ['-c', 'import whisper; print("OK")']);
       let stdout = '';
@@ -277,7 +313,11 @@ export class WhisperTranscriptionService {
       });
 
       python.on('close', (code: number) => {
-        resolve(code === 0 && stdout.includes('OK'));
+        const available = code === 0 && stdout.includes('OK');
+        if (available) {
+          logger.debug('[Whisper] Found whisper Python module (pip install)');
+        }
+        resolve(available);
       });
 
       python.on('error', () => {
