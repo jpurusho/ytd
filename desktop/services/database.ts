@@ -922,13 +922,36 @@ export function updateTranscript(id: number, updates: {
     if (updates.transcriptText !== undefined && updates.status === 'completed') {
       const transcript = getTranscriptById(id);
       if (transcript) {
-        // Delete existing FTS entry (if any) then insert new one
-        // Virtual tables don't support UPSERT, so we use DELETE + INSERT
-        db.prepare('DELETE FROM transcripts_fts WHERE rowid = ?').run(id);
-        db.prepare(`
-          INSERT INTO transcripts_fts(rowid, video_id, transcript_text)
-          VALUES (?, ?, ?)
-        `).run(id, transcript.videoId, updates.transcriptText);
+        try {
+          // Delete existing FTS entry (if any) then insert new one
+          // Virtual tables don't support UPSERT, so we use DELETE + INSERT
+          db.prepare('DELETE FROM transcripts_fts WHERE rowid = ?').run(id);
+          db.prepare(`
+            INSERT INTO transcripts_fts(rowid, video_id, transcript_text)
+            VALUES (?, ?, ?)
+          `).run(id, transcript.videoId, updates.transcriptText);
+        } catch (ftsError: any) {
+          // FTS indexing failed, but don't fail the whole transaction
+          // Log error and continue - transcript is still saved in main table
+          console.error(`[Database] FTS index update failed for transcript ${id}:`, ftsError.message);
+
+          // If FTS table is corrupted, try to rebuild it
+          if (ftsError.message?.includes('CORRUPT') || ftsError.code === 'SQLITE_CORRUPT_VTAB') {
+            console.warn(`[Database] FTS table appears corrupted, attempting rebuild...`);
+            try {
+              rebuildFtsIndex();
+              // Retry the FTS insert after rebuild
+              db.prepare('DELETE FROM transcripts_fts WHERE rowid = ?').run(id);
+              db.prepare(`
+                INSERT INTO transcripts_fts(rowid, video_id, transcript_text)
+                VALUES (?, ?, ?)
+              `).run(id, transcript.videoId, updates.transcriptText);
+              console.log(`[Database] FTS index rebuilt and transcript ${id} indexed successfully`);
+            } catch (rebuildError) {
+              console.error(`[Database] FTS rebuild failed:`, rebuildError);
+            }
+          }
+        }
       }
     }
   }
@@ -939,6 +962,54 @@ export function deleteTranscript(videoId: string): void {
   if (transcript) {
     db.prepare('DELETE FROM transcripts_fts WHERE rowid = ?').run(transcript.id);
     db.prepare('DELETE FROM transcripts WHERE video_id = ?').run(videoId);
+  }
+}
+
+/**
+ * Rebuild the FTS index from scratch
+ * Call this if the FTS table becomes corrupted
+ */
+export function rebuildFtsIndex(): void {
+  try {
+    console.log('[Database] Rebuilding FTS index...');
+
+    // Drop and recreate the FTS table
+    db.prepare('DROP TABLE IF EXISTS transcripts_fts').run();
+    db.prepare(`
+      CREATE VIRTUAL TABLE transcripts_fts USING fts5(
+        video_id UNINDEXED,
+        transcript_text,
+        content='transcripts',
+        content_rowid='id'
+      )
+    `).run();
+
+    // Repopulate from completed transcripts
+    const completedTranscripts = db.prepare(`
+      SELECT id, video_id, transcript_text
+      FROM transcripts
+      WHERE status = 'completed' AND transcript_text IS NOT NULL
+    `).all() as Array<{ id: number; video_id: string; transcript_text: string }>;
+
+    const insertFts = db.prepare(`
+      INSERT INTO transcripts_fts(rowid, video_id, transcript_text)
+      VALUES (?, ?, ?)
+    `);
+
+    let indexed = 0;
+    for (const transcript of completedTranscripts) {
+      try {
+        insertFts.run(transcript.id, transcript.video_id, transcript.transcript_text);
+        indexed++;
+      } catch (err) {
+        console.error(`[Database] Failed to index transcript ${transcript.id}:`, err);
+      }
+    }
+
+    console.log(`[Database] FTS index rebuilt successfully. Indexed ${indexed}/${completedTranscripts.length} transcripts`);
+  } catch (error) {
+    console.error('[Database] Failed to rebuild FTS index:', error);
+    throw error;
   }
 }
 
