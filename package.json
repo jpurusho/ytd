@@ -1,6 +1,6 @@
 {
   "name": "ytd",
-  "version": "1.8.7",
+  "version": "1.8.8",
   "description": "YouTube Downloader Desktop Application",
   "main": "dist/desktop/index.js",
   "author": "Jerome Purushotham",
