@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, IconButton, Button, TextField, InputAdornment,
-  Chip, Checkbox, TableSortLabel, Toolbar,
+  Chip, Checkbox, TableSortLabel, Toolbar, Menu, MenuItem, ListItemIcon,
+  ListItemText, Divider, Snackbar,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -11,6 +12,10 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import SubtitlesIcon from '@mui/icons-material/Subtitles';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import OpenWithIcon from '@mui/icons-material/OpenWith';
 import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
 import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
 import type { DownloadRecord, VideoInfo } from '@shared/types';
@@ -27,10 +32,35 @@ export default function History() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [converting, setConverting] = useState<Set<number>>(new Set());
   const [addToPlaylistVideo, setAddToPlaylistVideo] = useState<VideoInfo | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [menuRecord, setMenuRecord] = useState<DownloadRecord | null>(null);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [transcriptStatus, setTranscriptStatus] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadHistory();
   }, []);
+
+  useEffect(() => {
+    // Check transcript status for all records
+    async function checkTranscripts() {
+      const status: Record<string, boolean> = {};
+      for (const record of records) {
+        if (record.videoId) {
+          try {
+            const transcript = await window.api.transcripts.get(record.videoId);
+            status[record.videoId] = transcript?.status === 'completed';
+          } catch {
+            status[record.videoId] = false;
+          }
+        }
+      }
+      setTranscriptStatus(status);
+    }
+    if (records.length > 0) {
+      checkTranscripts();
+    }
+  }, [records]);
 
   async function loadHistory() {
     const data = await window.api.downloads.getHistory(500);
@@ -56,6 +86,42 @@ export default function History() {
 
   function openInFinder(filePath: string) {
     window.api.app.showInFinder(filePath);
+  }
+
+  function openInSystemPlayer(filePath: string) {
+    window.api.app.openInSystemPlayer(filePath);
+  }
+
+  function handleCopyURL() {
+    if (!menuRecord?.videoId) return;
+    const url = `https://www.youtube.com/watch?v=${menuRecord.videoId}`;
+    navigator.clipboard.writeText(url);
+    setSnackbarMessage('Video URL copied to clipboard');
+    setMenuAnchor(null);
+  }
+
+  async function handleTranscribe() {
+    if (!menuRecord?.videoId) return;
+    setMenuAnchor(null);
+    try {
+      const availability = await window.api.transcripts.checkAvailability();
+      if (!availability.whisperLocal && !availability.whisperAPI) {
+        setSnackbarMessage('Transcription requires Whisper (brew install openai-whisper) or OpenAI API key');
+        return;
+      }
+
+      await window.api.transcripts.start(menuRecord.videoId, { method: 'auto', model: 'base' });
+      setSnackbarMessage('Transcription started');
+
+      setTimeout(async () => {
+        try {
+          const transcript = await window.api.transcripts.get(menuRecord.videoId!);
+          setTranscriptStatus(prev => ({ ...prev, [menuRecord.videoId!]: transcript?.status === 'completed' }));
+        } catch {}
+      }, 2000);
+    } catch (error) {
+      setSnackbarMessage(`Failed to start transcription: ${(error as Error).message}`);
+    }
   }
 
   function handleSort(field: SortField) {
@@ -229,38 +295,15 @@ export default function History() {
                     <Typography variant="body2" color="text.secondary">{formatDate(record.downloadedAt)}</Typography>
                   </TableCell>
                   <TableCell align="right">
-                    <IconButton size="small" onClick={() => setPlayingRecord(record)} title="Play">
-                      <PlayArrowIcon fontSize="small" />
-                    </IconButton>
-                    {record.format !== 'mp4' && record.format !== 'mp3' && (
-                      <IconButton
-                        size="small"
-                        color="primary"
-                        disabled={converting.has(record.id)}
-                        onClick={async () => {
-                          setConverting(prev => new Set(prev).add(record.id));
-                          const result = await window.api.app.convertToMp4(record.filePath);
-                          setConverting(prev => { const next = new Set(prev); next.delete(record.id); return next; });
-                          if (result.success && result.outputPath) {
-                            window.api.app.showInFinder(result.outputPath);
-                          }
-                        }}
-                        title="Convert to MP4"
-                      >
-                        <SwapHorizIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                    <IconButton size="small" onClick={() => openInFinder(record.filePath)} title="Show in Finder">
-                      <FolderOpenIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" onClick={() => setAddToPlaylistVideo({ id: record.videoId, title: record.title, channel: record.channel, channelId: '', thumbnail: record.thumbnailUrl || '', duration: 0, publishedAt: record.downloadedAt, viewCount: 0, description: '' })} title="Add to playlist">
-                      <PlaylistAddIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" onClick={() => openInYouTube(record.videoId)} title="Open on YouTube">
-                      <OpenInNewIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" onClick={async () => { await window.api.downloads.deleteHistory([record.id]); loadHistory(); }} title="Remove">
-                      <DeleteIcon fontSize="small" />
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuAnchor(e.currentTarget);
+                        setMenuRecord(record);
+                      }}
+                    >
+                      <MoreVertIcon fontSize="small" />
                     </IconButton>
                   </TableCell>
                 </TableRow>
@@ -280,6 +323,108 @@ export default function History() {
         open={!!addToPlaylistVideo}
         videos={addToPlaylistVideo ? [addToPlaylistVideo] : []}
         onClose={() => setAddToPlaylistVideo(null)}
+      />
+
+      <Menu
+        anchorEl={menuAnchor}
+        open={!!menuAnchor}
+        onClose={() => { setMenuAnchor(null); setMenuRecord(null); }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        {menuRecord?.filePath && (
+          <MenuItem onClick={() => { setPlayingRecord(menuRecord); setMenuAnchor(null); }}>
+            <ListItemIcon><PlayArrowIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Play</ListItemText>
+          </MenuItem>
+        )}
+        {menuRecord?.filePath && (
+          <MenuItem onClick={() => { openInSystemPlayer(menuRecord.filePath); setMenuAnchor(null); }}>
+            <ListItemIcon><OpenWithIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Open in System Player</ListItemText>
+          </MenuItem>
+        )}
+        {menuRecord?.filePath && (
+          <MenuItem onClick={() => { openInFinder(menuRecord.filePath); setMenuAnchor(null); }}>
+            <ListItemIcon><FolderOpenIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Show in Finder</ListItemText>
+          </MenuItem>
+        )}
+        <Divider />
+        {menuRecord && (
+          <MenuItem onClick={() => {
+            setAddToPlaylistVideo({
+              id: menuRecord.videoId,
+              title: menuRecord.title,
+              channel: menuRecord.channel,
+              channelId: '',
+              thumbnail: menuRecord.thumbnailUrl || '',
+              duration: 0,
+              publishedAt: menuRecord.downloadedAt,
+              viewCount: 0,
+              description: ''
+            });
+            setMenuAnchor(null);
+          }}>
+            <ListItemIcon><PlaylistAddIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Add to Playlist</ListItemText>
+          </MenuItem>
+        )}
+        {menuRecord?.videoId && (
+          <MenuItem onClick={handleTranscribe}>
+            <ListItemIcon>
+              <SubtitlesIcon fontSize="small" color={transcriptStatus[menuRecord.videoId] ? 'success' : 'inherit'} />
+            </ListItemIcon>
+            <ListItemText>
+              {transcriptStatus[menuRecord.videoId] ? 'View Transcript' : 'Transcribe'}
+            </ListItemText>
+          </MenuItem>
+        )}
+        <Divider />
+        {menuRecord?.format && menuRecord.format !== 'mp4' && menuRecord.format !== 'mp3' && (
+          <MenuItem onClick={async () => {
+            if (!menuRecord?.filePath) return;
+            setMenuAnchor(null);
+            setConverting(prev => new Set(prev).add(menuRecord.id));
+            const result = await window.api.app.convertToMp4(menuRecord.filePath);
+            setConverting(prev => { const next = new Set(prev); next.delete(menuRecord.id); return next; });
+            if (result.success && result.outputPath) window.api.app.showInFinder(result.outputPath);
+          }}>
+            <ListItemIcon><SwapHorizIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Convert to MP4</ListItemText>
+          </MenuItem>
+        )}
+        <Divider />
+        {menuRecord?.videoId && (
+          <MenuItem onClick={handleCopyURL}>
+            <ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Copy Video URL</ListItemText>
+          </MenuItem>
+        )}
+        {menuRecord?.videoId && (
+          <MenuItem onClick={() => { openInYouTube(menuRecord.videoId); setMenuAnchor(null); }}>
+            <ListItemIcon><OpenInNewIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Open on YouTube</ListItemText>
+          </MenuItem>
+        )}
+        <Divider />
+        {menuRecord && (
+          <MenuItem onClick={async () => {
+            await window.api.downloads.deleteHistory([menuRecord.id]);
+            setMenuAnchor(null);
+            loadHistory();
+          }}>
+            <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+            <ListItemText sx={{ color: 'error.main' }}>Remove from History</ListItemText>
+          </MenuItem>
+        )}
+      </Menu>
+
+      <Snackbar
+        open={!!snackbarMessage}
+        autoHideDuration={3000}
+        onClose={() => setSnackbarMessage('')}
+        message={snackbarMessage}
       />
     </Box>
   );

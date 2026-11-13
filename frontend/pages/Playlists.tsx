@@ -42,6 +42,8 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
   const [syncMessage, setSyncMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [draggedItem, setDraggedItem] = useState<LocalPlaylistItem | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   useEffect(() => {
     loadPlaylists();
@@ -241,6 +243,57 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
     return `${m}:${String(s).padStart(2, '0')}`;
   }
 
+  function handleDragStart(e: React.DragEvent, item: LocalPlaylistItem, index: number) {
+    setDraggedItem(item);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', item.videoId);
+  }
+
+  function handleDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  }
+
+  function handleDragLeave() {
+    setDragOverIndex(null);
+  }
+
+  async function handleDrop(e: React.DragEvent, targetIndex: number) {
+    e.preventDefault();
+    setDragOverIndex(null);
+
+    if (!draggedItem || !selectedPlaylist) return;
+
+    const currentIndex = playlistItems.findIndex(item => item.videoId === draggedItem.videoId);
+    if (currentIndex === targetIndex) {
+      setDraggedItem(null);
+      return;
+    }
+
+    // Optimistically update UI
+    const newItems = [...playlistItems];
+    const [removed] = newItems.splice(currentIndex, 1);
+    newItems.splice(targetIndex, 0, removed);
+    setPlaylistItems(newItems);
+
+    // Update order in database
+    try {
+      await window.api.playlists.reorderItem(selectedPlaylist.id, draggedItem.videoId, targetIndex);
+    } catch (error) {
+      console.error('Failed to reorder:', error);
+      // Revert on error
+      await openPlaylist(selectedPlaylist);
+    }
+
+    setDraggedItem(null);
+  }
+
+  function handleDragEnd() {
+    setDraggedItem(null);
+    setDragOverIndex(null);
+  }
+
   // ─── Playlist Detail View ─────────────────────────────────────────────────
 
   if (selectedPlaylist) {
@@ -306,7 +359,23 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
             {playlistItems.map((item, index) => (
               <ListItem
                 key={item.videoId}
-                sx={{ px: 1, py: 0.75, borderRadius: 1, '&:hover': { bgcolor: 'action.hover' } }}
+                draggable
+                onDragStart={(e) => handleDragStart(e, item, index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, index)}
+                onDragEnd={handleDragEnd}
+                sx={{
+                  px: 1,
+                  py: 0.75,
+                  borderRadius: 1,
+                  '&:hover': { bgcolor: 'action.hover' },
+                  opacity: draggedItem?.videoId === item.videoId ? 0.5 : 1,
+                  borderTop: dragOverIndex === index ? '2px solid' : 'none',
+                  borderColor: 'primary.main',
+                  cursor: 'grab',
+                  '&:active': { cursor: 'grabbing' },
+                }}
               >
                 <Checkbox
                   size="small"
@@ -319,7 +388,7 @@ export default function Playlists({ onDownload, openPlaylistId, onPlaylistOpened
                   }}
                   sx={{ mr: 0.5 }}
                 />
-                <Box sx={{ mr: 1, color: 'text.secondary', cursor: 'grab' }}>
+                <Box sx={{ mr: 1, color: 'text.secondary' }}>
                   <DragIndicatorIcon fontSize="small" />
                 </Box>
                 <ListItemAvatar sx={{ minWidth: 80, cursor: 'pointer' }} onClick={() => handlePlayItem(item)}>

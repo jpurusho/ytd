@@ -4,7 +4,7 @@ import {
   TableHead, TableRow, IconButton, Button, TextField, InputAdornment,
   Chip, Checkbox, TableSortLabel, Dialog, DialogTitle, DialogContent,
   DialogActions, FormControlLabel, Menu, MenuItem, ListItemIcon, ListItemText,
-  Popover, Grid, Paper, ToggleButtonGroup, ToggleButton,
+  Popover, Grid, Paper, ToggleButtonGroup, ToggleButton, Snackbar, Divider,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -17,6 +17,10 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import ViewColumnIcon from '@mui/icons-material/ViewColumn';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import GridViewIcon from '@mui/icons-material/GridView';
+import EditIcon from '@mui/icons-material/Edit';
+import SubtitlesIcon from '@mui/icons-material/Subtitles';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import OpenWithIcon from '@mui/icons-material/OpenWith';
 import VideoPlayer from '../components/VideoPlayer/VideoPlayer';
 import AddToPlaylistDialog from '../components/AddToPlaylistDialog/AddToPlaylistDialog';
 import type { LibraryItem, DownloadRecord, VideoInfo } from '@shared/types';
@@ -68,10 +72,33 @@ export default function Library() {
   const [visibleColumns, setVisibleColumns] = useState<Set<SortField>>(loadVisibleColumns);
   const [columnAnchor, setColumnAnchor] = useState<null | HTMLElement>(null);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => (localStorage.getItem('ytd-library-view') as any) || 'list');
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [transcriptStatus, setTranscriptStatus] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadLibrary();
   }, []);
+
+  useEffect(() => {
+    // Check transcript status for all items
+    async function checkTranscripts() {
+      const status: Record<string, boolean> = {};
+      for (const item of items) {
+        try {
+          const transcript = await window.api.transcripts.get(item.videoId);
+          status[item.videoId] = transcript?.status === 'completed';
+        } catch {
+          status[item.videoId] = false;
+        }
+      }
+      setTranscriptStatus(status);
+    }
+    if (items.length > 0) {
+      checkTranscripts();
+    }
+  }, [items]);
 
   async function loadLibrary() {
     const data = await window.api.library.getAll({ limit: 1000 });
@@ -97,6 +124,61 @@ export default function Library() {
 
   function openInFinder(filePath: string) {
     window.api.app.showInFinder(filePath);
+  }
+
+  function openInSystemPlayer(filePath: string) {
+    window.api.app.openInSystemPlayer(filePath);
+  }
+
+  async function handleRename() {
+    if (!menuItem || !renameValue.trim()) return;
+    // TODO: Implement rename API
+    // For now, just show message that it's not implemented yet
+    setSnackbarMessage('Rename feature coming soon!');
+    setRenameDialogOpen(false);
+    setMenuAnchor(null);
+  }
+
+  function handleCopyURL() {
+    if (!menuItem) return;
+    const url = `https://www.youtube.com/watch?v=${menuItem.videoId}`;
+    navigator.clipboard.writeText(url);
+    setSnackbarMessage('Video URL copied to clipboard');
+    setMenuAnchor(null);
+  }
+
+  async function handleTranscribe() {
+    if (!menuItem) return;
+    setMenuAnchor(null);
+    try {
+      // Check availability first
+      const availability = await window.api.transcripts.checkAvailability();
+      if (!availability.whisperLocal && !availability.whisperAPI) {
+        setSnackbarMessage('Transcription requires Whisper (brew install openai-whisper) or OpenAI API key');
+        return;
+      }
+
+      // Start transcription with default settings
+      await window.api.transcripts.start(menuItem.videoId, { method: 'auto', model: 'base' });
+      setSnackbarMessage('Transcription started');
+
+      // Refresh transcript status after a delay
+      setTimeout(async () => {
+        try {
+          const transcript = await window.api.transcripts.get(menuItem.videoId);
+          setTranscriptStatus(prev => ({ ...prev, [menuItem.videoId]: transcript?.status === 'completed' }));
+        } catch {}
+      }, 2000);
+    } catch (error) {
+      setSnackbarMessage(`Failed to start transcription: ${(error as Error).message}`);
+    }
+  }
+
+  function openRenameDialog() {
+    if (!menuItem) return;
+    setRenameValue(menuItem.title);
+    setRenameDialogOpen(true);
+    setMenuAnchor(null);
   }
 
   function handleSort(field: SortField) {
@@ -403,11 +485,41 @@ export default function Library() {
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         {menuItem?.filePath && (
+          <MenuItem onClick={() => { setPlayingItem(menuItem); setMenuAnchor(null); }}>
+            <ListItemIcon><PlayArrowIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Play</ListItemText>
+          </MenuItem>
+        )}
+        {menuItem?.filePath && (
+          <MenuItem onClick={() => { openInSystemPlayer(menuItem!.filePath!); setMenuAnchor(null); }}>
+            <ListItemIcon><OpenWithIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Open in System Player</ListItemText>
+          </MenuItem>
+        )}
+        {menuItem?.filePath && (
           <MenuItem onClick={() => { openInFinder(menuItem!.filePath!); setMenuAnchor(null); }}>
             <ListItemIcon><FolderOpenIcon fontSize="small" /></ListItemIcon>
             <ListItemText>Show in Finder</ListItemText>
           </MenuItem>
         )}
+        <Divider />
+        <MenuItem onClick={() => { if (menuItem) setAddToPlaylistVideo({ id: menuItem.videoId, title: menuItem.title, channel: menuItem.channel, channelId: '', thumbnail: menuItem.thumbnailUrl || '', duration: menuItem.duration, publishedAt: menuItem.downloadedAt || '', viewCount: 0, description: '' }); setMenuAnchor(null); }}>
+          <ListItemIcon><PlaylistAddIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Add to Playlist</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={handleTranscribe}>
+          <ListItemIcon>
+            <SubtitlesIcon fontSize="small" color={menuItem && transcriptStatus[menuItem.videoId] ? 'success' : 'inherit'} />
+          </ListItemIcon>
+          <ListItemText>
+            {menuItem && transcriptStatus[menuItem.videoId] ? 'View Transcript' : 'Transcribe'}
+          </ListItemText>
+        </MenuItem>
+        <Divider />
+        <MenuItem onClick={openRenameDialog}>
+          <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Rename</ListItemText>
+        </MenuItem>
         {menuItem?.filePath && menuItem.format && menuItem.format !== 'mp4' && menuItem.format !== 'mp3' && (
           <MenuItem onClick={async () => {
             if (!menuItem?.filePath) return;
@@ -421,14 +533,16 @@ export default function Library() {
             <ListItemText>Convert to MP4</ListItemText>
           </MenuItem>
         )}
-        <MenuItem onClick={() => { if (menuItem) setAddToPlaylistVideo({ id: menuItem.videoId, title: menuItem.title, channel: menuItem.channel, channelId: '', thumbnail: menuItem.thumbnailUrl || '', duration: menuItem.duration, publishedAt: menuItem.downloadedAt || '', viewCount: 0, description: '' }); setMenuAnchor(null); }}>
-          <ListItemIcon><PlaylistAddIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>Add to Playlist</ListItemText>
+        <Divider />
+        <MenuItem onClick={handleCopyURL}>
+          <ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Copy Video URL</ListItemText>
         </MenuItem>
         <MenuItem onClick={() => { if (menuItem) openInYouTube(menuItem.videoId); setMenuAnchor(null); }}>
           <ListItemIcon><OpenInNewIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Open on YouTube</ListItemText>
         </MenuItem>
+        <Divider />
         <MenuItem onClick={() => { if (menuItem) { setSelected(new Set([menuItem.videoId])); setDeleteDialogOpen(true); } setMenuAnchor(null); }}>
           <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
           <ListItemText sx={{ color: 'error.main' }}>Delete</ListItemText>
@@ -472,6 +586,34 @@ export default function Library() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={renameDialogOpen} onClose={() => setRenameDialogOpen(false)}>
+        <DialogTitle>Rename Video</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Video Title"
+            fullWidth
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyPress={(e) => { if (e.key === 'Enter') handleRename(); }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRenameDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleRename} variant="contained">
+            Rename
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={!!snackbarMessage}
+        autoHideDuration={3000}
+        onClose={() => setSnackbarMessage('')}
+        message={snackbarMessage}
+      />
     </Box>
   );
 }

@@ -23,6 +23,43 @@ export class WhisperTranscriptionService {
   private activeTranscriptions: Map<string, any> = new Map();
 
   /**
+   * Get enhanced PATH with Homebrew directories
+   * Standard practice: extend PATH to include common installation locations
+   */
+  private getEnhancedEnv(): NodeJS.ProcessEnv {
+    const env = { ...process.env };
+    const brewPaths = [
+      '/opt/homebrew/bin',  // Apple Silicon Homebrew
+      '/usr/local/bin',     // Intel Mac Homebrew
+    ];
+
+    // Add Homebrew paths to PATH if not already present
+    const currentPath = env.PATH || '';
+    const pathsToAdd = brewPaths.filter(p => !currentPath.includes(p));
+
+    if (pathsToAdd.length > 0) {
+      env.PATH = `${pathsToAdd.join(':')}:${currentPath}`;
+    }
+
+    return env;
+  }
+
+  /**
+   * Check if whisper CLI is available
+   */
+  private async findWhisperPath(): Promise<string | null> {
+    const env = this.getEnhancedEnv();
+
+    const pathAvailable = await new Promise<boolean>((resolve) => {
+      const check = spawn('which', ['whisper'], { env });
+      check.on('close', (code: number) => resolve(code === 0));
+      check.on('error', () => resolve(false));
+    });
+
+    return pathAvailable ? 'whisper' : null;
+  }
+
+  /**
    * Transcribe audio file using Whisper
    */
   async transcribe(
@@ -62,20 +99,16 @@ export class WhisperTranscriptionService {
       throw new Error(`Audio file not found: ${audioPath}`);
     }
 
-    // Check if whisper CLI is available (brew install)
-    const useWhisperCLI = await new Promise<boolean>((resolve) => {
-      const check = spawn('which', ['whisper']);
-      check.on('close', (code: number) => resolve(code === 0));
-      check.on('error', () => resolve(false));
-    });
+    // Find whisper binary (checks Homebrew paths + PATH)
+    const whisperPath = await this.findWhisperPath();
 
     return new Promise((resolve, reject) => {
       let command: string;
       let args: string[];
 
-      if (useWhisperCLI) {
-        // Use whisper CLI directly (brew install)
-        command = 'whisper';
+      if (whisperPath) {
+        // Use whisper CLI (brew install or in PATH)
+        command = whisperPath;
         args = [
           audioPath,
           '--model', model,
@@ -83,7 +116,7 @@ export class WhisperTranscriptionService {
           '--output_dir', '/tmp',
           '--fp16', 'False', // Use FP32 for CPU compatibility
         ];
-        logger.debug(`[Whisper] Using CLI (brew): whisper ${args.join(' ')}`);
+        logger.debug(`[Whisper] Using CLI: ${command} ${args.join(' ')}`);
       } else {
         // Use Python module (pip install)
         command = 'python3';
@@ -95,14 +128,14 @@ export class WhisperTranscriptionService {
           '--output_dir', '/tmp',
           '--fp16', 'False',
         ];
-        logger.debug(`[Whisper] Using Python module (pip): python3 ${args.join(' ')}`);
+        logger.debug(`[Whisper] Using Python module: python3 ${args.join(' ')}`);
       }
 
       if (language) {
         args.push('--language', language);
       }
 
-      const whisperProcess = spawn(command, args);
+      const whisperProcess = spawn(command, args, { env: this.getEnhancedEnv() });
       this.activeTranscriptions.set(videoId, whisperProcess);
 
       let stdoutData = '';
@@ -291,9 +324,11 @@ export class WhisperTranscriptionService {
    * Check if Python and Whisper are available
    */
   async checkLocalWhisperAvailable(): Promise<boolean> {
-    // First check if whisper CLI is available (brew install)
+    const env = this.getEnhancedEnv();
+
+    // Check if whisper CLI is available (brew install)
     const cliAvailable = await new Promise<boolean>((resolve) => {
-      const whisperCmd = spawn('which', ['whisper']);
+      const whisperCmd = spawn('which', ['whisper'], { env });
       whisperCmd.on('close', (code: number) => resolve(code === 0));
       whisperCmd.on('error', () => resolve(false));
     });
@@ -305,7 +340,7 @@ export class WhisperTranscriptionService {
 
     // Fall back to Python module check (pip install)
     return new Promise((resolve) => {
-      const python = spawn('python3', ['-c', 'import whisper; print("OK")']);
+      const python = spawn('python3', ['-c', 'import whisper; print("OK")'], { env });
       let stdout = '';
 
       python.stdout.on('data', (data: Buffer) => {
