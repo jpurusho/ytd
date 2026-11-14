@@ -93,12 +93,58 @@ async function downloadFileWithProgress(url: string): Promise<string> {
 
         file.on('finish', () => {
           file.close();
-          logger.info('[Update] Download complete', { path: destPath });
+
+          // Verify download completed fully
+          if (totalBytes > 0 && downloaded !== totalBytes) {
+            const error = new Error(
+              `Download incomplete: got ${downloaded} bytes, expected ${totalBytes}`
+            );
+            logger.error('[Update] Download integrity check failed', {
+              downloaded,
+              expected: totalBytes,
+              path: destPath,
+            });
+            try {
+              fs.unlinkSync(destPath); // Delete partial file
+            } catch (unlinkErr) {
+              logger.warn('[Update] Failed to delete partial file', { path: destPath });
+            }
+            return reject(error);
+          }
+
+          // Verify it's a valid zip file (check magic number: PK)
+          try {
+            const header = fs.readFileSync(destPath, { start: 0, end: 4 });
+            const isZip = header[0] === 0x50 && header[1] === 0x4B; // "PK" signature
+            if (!isZip) {
+              const error = new Error('Downloaded file is not a valid zip');
+              logger.error('[Update] Zip validation failed', { path: destPath });
+              try {
+                fs.unlinkSync(destPath);
+              } catch (unlinkErr) {
+                logger.warn('[Update] Failed to delete invalid file', { path: destPath });
+              }
+              return reject(error);
+            }
+          } catch (validationErr) {
+            const error = new Error(`Download validation failed: ${(validationErr as Error).message}`);
+            logger.error('[Update] File validation error', { error: validationErr });
+            return reject(error);
+          }
+
+          logger.info('[Update] Download complete and verified', {
+            path: destPath,
+            bytes: downloaded,
+          });
           resolve(destPath);
         });
 
         file.on('error', (err: Error) => {
-          fs.unlinkSync(destPath);
+          try {
+            fs.unlinkSync(destPath);
+          } catch (unlinkErr) {
+            logger.warn('[Update] Failed to delete file after error', { path: destPath });
+          }
           reject(err);
         });
       }).on('error', (err: Error) => {
