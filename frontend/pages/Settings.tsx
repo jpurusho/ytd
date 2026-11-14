@@ -107,25 +107,23 @@ export default function Settings() {
           <Button variant="outlined" onClick={handleSelectDir}>Browse</Button>
         </Box>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-          If you moved downloaded files to a different folder, rescan to update the history so the Dashboard and History pages stop showing them as missing.
+          After moving files, update the folder above, then click Rescan to update file paths in the database.
         </Typography>
         <Box display="flex" alignItems="center" gap={1.5}>
           <Button
             size="small"
             variant="outlined"
             startIcon={<FolderSyncIcon />}
-            disabled={rescanning}
+            disabled={rescanning || !outputDir}
             onClick={async () => {
-              const folder = await window.api.app.selectDirectory();
-              if (!folder) return;
               setRescanning(true);
               setRescanResult(null);
-              const result = await window.api.downloads.rescanFolder(folder);
+              const result = await window.api.downloads.rescanFolder(outputDir);
               setRescanResult(result);
               setRescanning(false);
             }}
           >
-            {rescanning ? 'Scanning...' : 'Rescan folder for moved files'}
+            {rescanning ? 'Scanning...' : 'Rescan current folder'}
           </Button>
           {rescanResult && (
             <Typography variant="caption" color={rescanResult.updated > 0 ? 'success.main' : 'text.secondary'}>
