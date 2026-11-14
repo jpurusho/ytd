@@ -114,7 +114,11 @@ async function downloadFileWithProgress(url: string): Promise<string> {
 
           // Verify it's a valid zip file (check magic number: PK)
           try {
-            const header = fs.readFileSync(destPath, { start: 0, end: 4 });
+            const fd = fs.openSync(destPath, 'r');
+            const header = Buffer.alloc(4);
+            fs.readSync(fd, header, 0, 4, 0);
+            fs.closeSync(fd);
+
             const isZip = header[0] === 0x50 && header[1] === 0x4B; // "PK" signature
             if (!isZip) {
               const error = new Error('Downloaded file is not a valid zip');
